@@ -120,6 +120,26 @@ async def admin_mono_save(message: Message, state: FSMContext) -> None:
     await message.answer("✅ Посилання на банку оновлено!", reply_markup=admin_main_keyboard())
 
 
+@router.callback_query(F.data == "admin:set_card")
+async def admin_set_card_handler(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
+    if not await check_admin_rights(callback.from_user.id, bot):
+        return
+    await state.set_state(AdminConfigState.waiting_card_number)
+    await callback.message.edit_text("Введіть новий номер картки (або відправте 0 щоб видалити):")
+    await callback.answer()
+
+
+@router.message(AdminConfigState.waiting_card_number)
+async def admin_card_save(message: Message, state: FSMContext) -> None:
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            config = await get_or_create_shop_config(session)
+            val = message.text.strip()
+            config.card_number = val if val != "0" else None
+    await state.clear()
+    await message.answer("✅ Номер картки оновлено!", reply_markup=admin_main_keyboard())
+
+
 @router.callback_query(F.data == "admin:set_welcome")
 async def admin_set_welcome_handler(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
     if not await check_admin_rights(callback.from_user.id, bot):

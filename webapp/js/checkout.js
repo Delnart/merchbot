@@ -74,12 +74,12 @@ const checkout = {
 
             <div id="newRecipientForm" style="${this.recipients.length ? 'display:none' : ''}">
                 <div class="form-group">
-                    <label class="form-label">ПІБ отримувача</label>
-                    <input class="form-input" id="checkoutName" placeholder="Прізвище Ім'я По-батькові">
+                    <label class="form-label">ПІБ отримувача (По-батькові не обов'язково)</label>
+                    <input class="form-input" id="checkoutName" placeholder="Прізвище Ім'я">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Номер телефону</label>
-                    <input class="form-input" id="checkoutPhone" type="tel" placeholder="+380XXXXXXXXX">
+                    <input class="form-input" id="checkoutPhone" type="tel" placeholder="+380... або 0...">
                 </div>
                 <label class="checkbox-row">
                     <input type="checkbox" id="checkoutSaveRecipient" checked>
@@ -118,7 +118,13 @@ const checkout = {
                 <a href="${this.config.mono_jar_url}" target="_blank" class="btn-secondary" style="text-align:center;display:block;margin-bottom:10px">
                     Відкрити Банку Monobank
                 </a>
-                <div style="font-size:0.82rem;color:var(--text-secondary)">Після оплати завантажте скріншот квитанції</div>
+                ${this.config.card_number ? `
+                <div style="font-size:0.82rem; margin-top:10px; text-align:center;">
+                    Або перекажіть на картку: <br>
+                    <b style="user-select:all; font-size:1.1rem; display:block; margin-top:4px;">${this.config.card_number}</b>
+                </div>
+                ` : ''}
+                <div style="font-size:0.82rem;color:var(--text-secondary);margin-top:10px;text-align:center;">Після оплати завантажте скріншот квитанції</div>
             </div>
 
             <div class="section-title">Скріншот квитанції</div>
@@ -184,9 +190,10 @@ const checkout = {
     validateForm() {
         const btn = document.getElementById('checkoutSubmitBtn');
         if (!btn) return;
+        const phoneInput = document.getElementById('checkoutPhone')?.value.trim() || '';
+        const phoneValid = this.selectedRecipientId || /^(\+?380|0)\d{9}$/.test(phoneInput.replace(/[\s-]/g, ''));
         const hasRecipient = this.selectedRecipientId || (
-            document.getElementById('checkoutName')?.value.trim() &&
-            document.getElementById('checkoutPhone')?.value.trim()
+            document.getElementById('checkoutName')?.value.trim() && phoneValid
         );
         const hasDelivery = !!this.selectedDelivery;
         const hasAddress = this.selectedDelivery !== 'nova_poshta' || 

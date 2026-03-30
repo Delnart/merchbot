@@ -54,6 +54,9 @@ class ApiClient {
     removeCartItem(id) { return this.del(`/api/cart/${id}`); }
     clearCart() { return this.del('/api/cart'); }
 
+    // ── Orders
+    getOrders() { return this.get('/api/orders'); }
+
     // ── Recipients
     getRecipients() { return this.get('/api/recipients'); }
     createRecipient(data) { return this.post('/api/recipients', data); }

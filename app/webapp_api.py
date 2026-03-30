@@ -4,8 +4,9 @@ import io
 from decimal import Decimal
 
 import aiohttp
+import re
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Header, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -77,10 +78,27 @@ class RecipientCreate(BaseModel):
     phone: str
     is_default: bool = False
 
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        cln = re.sub(r"[\s\-]", "", v)
+        if not re.match(r"^(\+?380|0)\d{9}$", cln):
+            raise ValueError("Invalid phone format")
+        return cln
 
 class RecipientUpdate(BaseModel):
     full_name: str | None = None
     phone: str | None = None
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str | None) -> str | None:
+        if v is not None:
+            cln = re.sub(r"[\s\-]", "", v)
+            if not re.match(r"^(\+?380|0)\d{9}$", cln):
+                raise ValueError("Invalid phone format")
+            return cln
+        return v
 
 
 class ProductCreate(BaseModel):
@@ -168,6 +186,7 @@ async def api_shop_config(_: int = Depends(get_telegram_id)):
     return {
         "currency": config.currency,
         "mono_jar_url": config.mono_jar_url,
+        "card_number": config.card_number,
         "is_dayf_delivery_enabled": config.is_dayf_delivery_enabled,
     }
 
@@ -247,6 +266,27 @@ async def api_cart_clear(telegram_id: int = Depends(get_telegram_id)):
 
 
 # ── Recipient endpoints ─────────────────────────────────────────────────────
+
+@router.get("/orders")
+async def api_orders_list(telegram_id: int = Depends(get_telegram_id)):
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Order).where(Order.telegram_id == telegram_id).order_by(Order.created_at.desc())
+        )
+        orders = list(result.scalars().all())
+    return {
+        "orders": [
+            {
+                "id": o.id,
+                "status": o.status.value,
+                "total_amount": float(o.total_amount),
+                "created_at": o.created_at.isoformat(),
+                "delivery_method": o.delivery_method.value if o.delivery_method else None,
+                "address": o.address,
+            } for o in orders
+        ]
+    }
+
 
 @router.get("/recipients")
 async def api_recipients_list(telegram_id: int = Depends(get_telegram_id)):

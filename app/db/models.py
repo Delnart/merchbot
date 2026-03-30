@@ -60,6 +60,7 @@ class ShopConfig(Base):
     support_text: Mapped[str] = mapped_column(Text, default="Для питань звертайтесь до менеджера")
     currency: Mapped[str] = mapped_column(String(10), default="UAH")
     mono_jar_url: Mapped[str] = mapped_column(String(255), default="https://send.monobank.ua/")
+    card_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
     is_dayf_delivery_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
