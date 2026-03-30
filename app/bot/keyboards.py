@@ -14,10 +14,8 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
 
 def persistent_main_keyboard() -> ReplyKeyboardMarkup:
     b = ReplyKeyboardBuilder()
-    webapp_url = f"{settings.app_base_url.rstrip('/')}/webapp/index.html"
-    b.button(text="🛍 Відкрити каталог", web_app=WebAppInfo(url=webapp_url))
     b.button(text="💬 Підтримка")
-    b.adjust(2)
+    b.adjust(1)
     return b.as_markup(resize_keyboard=True)
 
 
