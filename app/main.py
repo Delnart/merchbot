@@ -69,13 +69,14 @@ async def health() -> dict[str, str]:
 
 
 @app.get("/setup/webhook")
-async def setup_webhook() -> dict[str, bool]:
+async def setup_webhook() -> dict[str, str | bool]:
+    await init_db()
     await bot.set_webhook(
         url=f"{settings.app_base_url}/webhook/telegram",
         secret_token=settings.webhook_secret,
         allowed_updates=["message", "callback_query"],
     )
-    return {"ok": True}
+    return {"ok": True, "message": "Database initialized and webhook set."}
 
 
 @app.get("/setup/delete_webhook")
