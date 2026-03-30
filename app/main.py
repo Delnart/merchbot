@@ -57,6 +57,12 @@ if webapp_dir.is_dir():
     app.mount("/webapp", StaticFiles(directory=str(webapp_dir), html=True), name="webapp")
 
 
+from fastapi.responses import JSONResponse, RedirectResponse
+
+@app.get("/")
+async def root_redirect():
+    return RedirectResponse(url="/webapp/index.html")
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
