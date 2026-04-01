@@ -17,6 +17,7 @@ from app.db.session import AsyncSessionLocal
 from app.services.admin_config import bind_admin_chat, get_active_admin_binding, get_or_create_shop_config
 from app.services.auth import is_chat_admin, is_group_chat
 from app.services.cart import ensure_user
+from app.services.catalog import list_active_products
 from app.services.orders import get_order, set_order_admin_message, set_order_status
 from app.services.google_sheets import sync_order_to_sheet
 
@@ -49,12 +50,19 @@ async def start_handler(message: Message, state: FSMContext) -> None:
                 message.from_user.first_name, message.from_user.last_name,
             )
             config = await get_or_create_shop_config(session)
+            active_products = await list_active_products(session)
     await message.answer(config.welcome_text, reply_markup=persistent_main_keyboard())
-    await message.answer(
-        "💬 Для зв'язку з адміністрацією або залишення зворотного зв'язку, натисніть кнопку «Підтримка» нижче "
-        "або використовуйте команду /support.",
-        reply_markup=main_menu_keyboard()
-    )
+    if not active_products:
+        await message.answer(
+            "Предзамовлення недоступне.\n💬 Для зв'язку з адміністрацією або залишення зворотного зв'язку, натисніть кнопку «Підтримка» нижче "
+            "або використовуйте команду /support."
+        )
+    else:
+        await message.answer(
+            "💬 Для зв'язку з адміністрацією або залишення зворотного зв'язку, натисніть кнопку «Підтримка» нижче "
+            "або використовуйте команду /support.",
+            reply_markup=main_menu_keyboard()
+        )
 
 
 @router.message(F.text == "💬 Підтримка")
