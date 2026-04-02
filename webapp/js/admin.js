@@ -83,6 +83,10 @@ const admin = {
                 <label class="form-label">Розміри та ціни (формат: S:500, M:550, L:600)</label>
                 <input class="form-input" id="adminSizes" value="${sizesStr}" placeholder="S:500, M:550, L:600">
             </div>
+            <label class="checkbox-row" style="margin-bottom:15px; display:flex; align-items:center; gap:8px;">
+                <input type="checkbox" id="adminRequiresColor" ${product && product.requires_color ? 'checked' : ''}>
+                <span class="checkbox-label" style="font-size:0.9rem">Товар має опцію кольору (Білий/Чорний)</span>
+            </label>
 
             <div class="section-title">Фото товару</div>
             <div class="file-upload-area" id="adminPhotoArea">
@@ -130,6 +134,7 @@ const admin = {
         const title = document.getElementById('adminTitle').value.trim();
         const description = document.getElementById('adminDesc').value.trim();
         const sizesRaw = document.getElementById('adminSizes').value.trim();
+        const requires_color = document.getElementById('adminRequiresColor').checked;
 
         if (!title || !description || !sizesRaw) { app.showToast('Заповніть всі поля'); return; }
 
@@ -150,10 +155,10 @@ const admin = {
         try {
             let productId;
             if (this.currentProduct) {
-                await api.updateProduct(this.currentProduct.id, { title, description, sizes });
+                await api.updateProduct(this.currentProduct.id, { title, description, requires_color, sizes });
                 productId = this.currentProduct.id;
             } else {
-                const result = await api.createProduct({ title, description, sizes });
+                const result = await api.createProduct({ title, description, requires_color, sizes });
                 productId = result.id;
             }
             if (this._newPhotoFile) {

@@ -20,7 +20,7 @@ async def ensure_user(session: AsyncSession, telegram_id: int, username: str | N
     return user
 
 
-async def add_to_cart(session: AsyncSession, telegram_id: int, product_id: int, size: str, quantity: int) -> None:
+async def add_to_cart(session: AsyncSession, telegram_id: int, product_id: int, size: str, color: str | None, quantity: int) -> None:
     size_query = select(ProductSize).where(ProductSize.product_id == product_id, ProductSize.size == size)
     size_result = await session.execute(size_query)
     size_line = size_result.scalar_one_or_none()
@@ -31,6 +31,7 @@ async def add_to_cart(session: AsyncSession, telegram_id: int, product_id: int, 
         CartItem.telegram_id == telegram_id,
         CartItem.product_id == product_id,
         CartItem.size == size,
+        CartItem.color == color,
     )
     line_result = await session.execute(line_query)
     line = line_result.scalar_one_or_none()
@@ -39,6 +40,7 @@ async def add_to_cart(session: AsyncSession, telegram_id: int, product_id: int, 
             telegram_id=telegram_id,
             product_id=product_id,
             size=size,
+            color=color,
             price=Decimal(str(size_line.price)),
             quantity=quantity,
         )

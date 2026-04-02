@@ -49,6 +49,7 @@ async def create_order_from_cart(
                 product_id=product.id,
                 title=product.title,
                 size=item.size,
+                color=item.color,
                 unit_price=item.price,
                 quantity=item.quantity,
             )

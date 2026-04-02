@@ -49,7 +49,7 @@ class ApiClient {
 
     // ── Cart
     getCart() { return this.get('/api/cart'); }
-    addToCart(productId, size, qty = 1) { return this.post('/api/cart', { product_id: productId, size, quantity: qty }); }
+    addToCart(productId, size, color, qty = 1) { return this.post('/api/cart', { product_id: productId, size, color, quantity: qty }); }
     updateCartItem(id, qty) { return this.patch(`/api/cart/${id}`, { quantity: qty }); }
     removeCartItem(id) { return this.del(`/api/cart/${id}`); }
     clearCart() { return this.del('/api/cart'); }

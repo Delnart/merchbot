@@ -42,7 +42,7 @@ const checkout = {
             <div class="card" style="margin-bottom:16px;padding:14px">
                 ${cartData.items.map(i => `
                     <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:0.85rem">
-                        <span>${this._esc(i.title)} (${i.size}) ×${i.quantity}</span>
+                        <span>${this._esc(i.title)} (${i.size}${i.color ? ' - ' + i.color : ''}) ×${i.quantity}</span>
                         <span style="font-weight:600">${i.line_total} грн</span>
                     </div>
                 `).join('')}

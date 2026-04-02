@@ -72,6 +72,7 @@ class Product(Base):
     description: Mapped[str] = mapped_column(Text)
     photo_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    requires_color: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -90,12 +91,13 @@ class ProductSize(Base):
 
 class CartItem(Base):
     __tablename__ = "cart_items"
-    __table_args__ = (UniqueConstraint("telegram_id", "product_id", "size", name="uq_cart_line"),)
+    __table_args__ = (UniqueConstraint("telegram_id", "product_id", "size", "color", name="uq_cart_line"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     telegram_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.telegram_id", ondelete="CASCADE"), index=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
     size: Mapped[str] = mapped_column(String(20))
+    color: Mapped[str | None] = mapped_column(String(20), nullable=True)
     price: Mapped[float] = mapped_column(Numeric(10, 2))
     quantity: Mapped[int] = mapped_column(Integer, default=1)
 
@@ -130,6 +132,7 @@ class OrderItem(Base):
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
     title: Mapped[str] = mapped_column(String(255))
     size: Mapped[str] = mapped_column(String(20))
+    color: Mapped[str | None] = mapped_column(String(20), nullable=True)
     unit_price: Mapped[float] = mapped_column(Numeric(10, 2))
     quantity: Mapped[int] = mapped_column(Integer)
 

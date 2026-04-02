@@ -66,6 +66,7 @@ async def require_admin(telegram_id: int = Depends(get_telegram_id)) -> int:
 class CartAddRequest(BaseModel):
     product_id: int
     size: str
+    color: str | None = None
     quantity: int = 1
 
 
@@ -104,12 +105,14 @@ class RecipientUpdate(BaseModel):
 class ProductCreate(BaseModel):
     title: str
     description: str
+    requires_color: bool = False
     sizes: dict[str, float]  # e.g. {"S": 500, "M": 550}
 
 
 class ProductUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
+    requires_color: bool | None = None
     sizes: dict[str, float] | None = None
 
 
@@ -130,6 +133,7 @@ async def api_catalog(telegram_id: int = Depends(get_telegram_id)):
                 "title": p.title,
                 "description": p.description,
                 "photo_url": f"/api/photos/{p.photo_file_id}" if p.photo_file_id else None,
+                "requires_color": p.requires_color,
                 "min_price": float(min_price),
                 "sizes": [{"size": s.size, "price": float(s.price)} for s in sizes],
             })
@@ -147,6 +151,7 @@ async def api_catalog_item(product_id: int, _: int = Depends(get_telegram_id)):
         "id": product.id,
         "title": product.title,
         "description": product.description,
+        "requires_color": product.requires_color,
         "photo_url": f"/api/photos/{product.photo_file_id}" if product.photo_file_id else None,
         "sizes": [{"size": s.size, "price": float(s.price)} for s in sizes],
     }
@@ -207,6 +212,7 @@ async def api_cart_view(telegram_id: int = Depends(get_telegram_id)):
             "product_id": item.product_id,
             "title": product.title,
             "size": item.size,
+            "color": item.color,
             "price": float(item.price),
             "quantity": item.quantity,
             "line_total": float(line_total),
@@ -221,7 +227,7 @@ async def api_cart_add(body: CartAddRequest, telegram_id: int = Depends(get_tele
         async with session.begin():
             await ensure_user(session, telegram_id, None, None, None)
             try:
-                await add_to_cart(session, telegram_id, body.product_id, body.size, body.quantity)
+                await add_to_cart(session, telegram_id, body.product_id, body.size, body.color, body.quantity)
             except ValueError:
                 raise HTTPException(status_code=400, detail="invalid_size")
     return {"ok": True}
@@ -464,7 +470,7 @@ async def api_checkout(
             await session.refresh(order, attribute_names=["items"])
 
     # Sync to Google Sheets
-    items_str = "; ".join([f"{i.title} {i.size} x{i.quantity}" for i in order.items])
+    items_str = "; ".join([f"{i.title} {i.size}{' ' + i.color if i.color else ''} x{i.quantity}" for i in order.items])
     sync_order_to_sheet(
         order_id=order.id,
         status=order.status.value,
@@ -517,7 +523,8 @@ async def _notify_admin_chat(binding, order, name, phone, delivery_method, addre
         "\n📦 <b>Позиції:</b>",
     ]
     for item in order.items:
-        lines.append(f"▫️ {item.title} | {item.size} | {item.quantity} шт x {Decimal(item.unit_price)} грн")
+        color_str = f" | {item.color}" if item.color else ""
+        lines.append(f"▫️ {item.title} | {item.size}{color_str} | {item.quantity} шт x {Decimal(item.unit_price)} грн")
 
     caption = "\n".join(lines)
 
@@ -554,6 +561,7 @@ async def api_admin_products(admin_id: int = Depends(require_admin)):
                 "id": p.id,
                 "title": p.title,
                 "description": p.description,
+                "requires_color": p.requires_color,
                 "photo_url": f"/api/photos/{p.photo_file_id}" if p.photo_file_id else None,
                 "is_active": p.is_active,
                 "sizes": [{"size": s.size, "price": float(s.price)} for s in sizes],
@@ -565,7 +573,7 @@ async def api_admin_products(admin_id: int = Depends(require_admin)):
 async def api_admin_product_create(body: ProductCreate, admin_id: int = Depends(require_admin)):
     async with AsyncSessionLocal() as session:
         async with session.begin():
-            product = await create_product(session, title=body.title, description=body.description)
+            product = await create_product(session, title=body.title, description=body.description, requires_color=body.requires_color)
             await replace_sizes(session, product, body.sizes)
             pid = product.id
     return {"id": pid, "ok": True}
@@ -582,6 +590,8 @@ async def api_admin_product_update(product_id: int, body: ProductUpdate, admin_i
                 product.title = body.title
             if body.description is not None:
                 await set_product_description(session, product, body.description)
+            if body.requires_color is not None:
+                product.requires_color = body.requires_color
             if body.sizes is not None:
                 await replace_sizes(session, product, body.sizes)
     return {"ok": True}

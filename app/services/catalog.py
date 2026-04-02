@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Product, ProductSize
 
 
-async def create_product(session: AsyncSession, title: str, description: str) -> Product:
-    product = Product(title=title, description=description)
+async def create_product(session: AsyncSession, title: str, description: str, requires_color: bool = False) -> Product:
+    product = Product(title=title, description=description, requires_color=requires_color)
     session.add(product)
     await session.flush()
     return product

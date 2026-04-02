@@ -241,7 +241,7 @@ async def order_status_handler(callback: CallbackQuery, bot: Bot) -> None:
             order_recipient = order.recipient_name or ""
             order_delivery = f"{order.delivery_method.value if order.delivery_method else ''} {order.address}"
             await session.refresh(order, attribute_names=["items"])
-            items_str = "; ".join([f"{i.title} {i.size} x{i.quantity}" for i in order.items])
+            items_str = "; ".join([f"{i.title} {i.size}{' ' + i.color if i.color else ''} x{i.quantity}" for i in order.items])
 
     status_translations = {
         OrderStatus.in_process: "🔄 В роботі",

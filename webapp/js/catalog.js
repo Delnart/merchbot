@@ -57,6 +57,18 @@ const catalog = {
                 }
                 <div class="product-detail-title">${this._esc(p.title)}</div>
                 <div class="product-detail-description">${this._esc(p.description)}</div>
+
+                ${p.requires_color ? `
+                <div class="section-title">Оберіть колір</div>
+                <div class="size-selector" id="colorSelector" style="margin-bottom: 20px;">
+                    <button class="size-btn selected" data-color="Білий" onclick="catalog.selectColor(this)">
+                        <span class="size-label">Білий</span>
+                    </button>
+                    <button class="size-btn" data-color="Чорний" onclick="catalog.selectColor(this)">
+                        <span class="size-label">Чорний</span>
+                    </button>
+                </div>
+                ` : ''}
                 
                 <div class="section-title">Оберіть розмір</div>
                 <div class="size-selector" id="sizeSelector">
@@ -84,16 +96,29 @@ const catalog = {
         btn.classList.add('selected');
     },
 
+    selectColor(btn) {
+        document.querySelectorAll('#colorSelector .size-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+    },
+
     async addToCart(productId) {
         const selected = document.querySelector('#sizeSelector .size-btn.selected');
         if (!selected) { app.showToast('Оберіть розмір'); return; }
+
+        const colorSelector = document.getElementById('colorSelector');
+        let selectedColor = null;
+        if (colorSelector) {
+            const colorBtn = colorSelector.querySelector('.size-btn.selected');
+            if (!colorBtn) { app.showToast('Оберіть колір'); return; }
+            selectedColor = colorBtn.dataset.color;
+        }
 
         const btn = document.getElementById('addToCartBtn');
         btn.disabled = true;
         btn.textContent = 'Додаємо...';
 
         try {
-            await api.addToCart(productId, selected.dataset.size);
+            await api.addToCart(productId, selected.dataset.size, selectedColor);
             app.showToast('Додано в кошик');
             await cart.updateBadge();
             btn.textContent = 'Додано';

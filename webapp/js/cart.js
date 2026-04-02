@@ -43,7 +43,7 @@ const cart = {
                         }
                         <div class="cart-item-info">
                             <div class="cart-item-title">${this._esc(item.title)}</div>
-                            <div class="cart-item-size">Розмір: ${item.size}</div>
+                            <div class="cart-item-size">Розмір: ${item.size}${item.color ? ' / Колір: ' + item.color : ''}</div>
                             <div class="cart-item-price">${item.line_total} грн</div>
                         </div>
                         <div class="cart-item-actions">
