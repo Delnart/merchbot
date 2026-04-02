@@ -57,7 +57,7 @@ const catalog = {
                     : ''
                 }
                 <div class="product-detail-title">${this._esc(p.title)}</div>
-                <div class="product-detail-description">${this._esc(p.description)}</div>
+                <div class="product-detail-description" style="white-space: pre-wrap;">${this._esc(p.description)}</div>
 
                 ${p.requires_color ? `
                 <div class="section-title">Оберіть колір</div>

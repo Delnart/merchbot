@@ -67,5 +67,5 @@ async def set_size_price(session: AsyncSession, product: Product, size: str, pri
 
 
 async def get_sizes(session: AsyncSession, product_id: int) -> list[ProductSize]:
-    result = await session.execute(select(ProductSize).where(ProductSize.product_id == product_id).order_by(ProductSize.size.asc()))
+    result = await session.execute(select(ProductSize).where(ProductSize.product_id == product_id).order_by(ProductSize.id.asc()))
     return list(result.scalars().all())
