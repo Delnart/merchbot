@@ -133,6 +133,7 @@ async def api_catalog(telegram_id: int = Depends(get_telegram_id)):
                 "title": p.title,
                 "description": p.description,
                 "photo_url": f"/api/photos/{p.photo_file_id}" if p.photo_file_id else None,
+                "photo_black_url": f"/api/photos/{p.photo_black_file_id}" if getattr(p, 'photo_black_file_id', None) else None,
                 "requires_color": p.requires_color,
                 "min_price": float(min_price),
                 "sizes": [{"size": s.size, "price": float(s.price)} for s in sizes],
@@ -153,6 +154,7 @@ async def api_catalog_item(product_id: int, _: int = Depends(get_telegram_id)):
         "description": product.description,
         "requires_color": product.requires_color,
         "photo_url": f"/api/photos/{product.photo_file_id}" if product.photo_file_id else None,
+        "photo_black_url": f"/api/photos/{product.photo_black_file_id}" if getattr(product, 'photo_black_file_id', None) else None,
         "sizes": [{"size": s.size, "price": float(s.price)} for s in sizes],
     }
 
@@ -487,18 +489,51 @@ async def api_checkout(
     return {"ok": True, "order_id": order.id}
 
 
+def resize_image_for_telegram(photo_bytes: bytes) -> bytes:
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(photo_bytes))
+        img.thumbnail((1920, 1920))
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=85)
+        return out.getvalue()
+    except Exception:
+        return photo_bytes
+
 async def _upload_photo_to_telegram(chat_id: int, photo_bytes: bytes) -> str:
-    """Send photo to the user's own chat to get a file_id, then delete the message."""
+    """Send photo to the admin chat to get a file_id, then delete the message."""
     from app.main import bot
     from aiogram.types import BufferedInputFile
 
+    photo_bytes = resize_image_for_telegram(photo_bytes)
     input_file = BufferedInputFile(photo_bytes, filename="receipt.jpg")
-    msg = await bot.send_photo(chat_id=chat_id, photo=input_file)
-    file_id = msg.photo[-1].file_id
     try:
-        await bot.delete_message(chat_id=chat_id, message_id=msg.message_id)
-    except Exception:
-        pass
+        msg = await bot.send_photo(chat_id=chat_id, photo=input_file, disable_notification=True)
+        file_id = msg.photo[-1].file_id
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=msg.message_id)
+        except Exception:
+            pass
+    except Exception as e:
+        # Fallback to group chat if PM is forbidden
+        async with AsyncSessionLocal() as session:
+            binding = await get_active_admin_binding(session)
+        if binding:
+            try:
+                msg = await bot.send_photo(chat_id=binding.chat_id, photo=input_file, disable_notification=True)
+                file_id = msg.photo[-1].file_id
+                try:
+                    await bot.delete_message(chat_id=binding.chat_id, message_id=msg.message_id)
+                except Exception:
+                    pass
+            except Exception as inner_e:
+                raise HTTPException(status_code=400, detail=f"upload_failed_in_group: {inner_e}")
+        else:
+            raise HTTPException(status_code=400, detail=f"upload_failed: {e}")
+            
     return file_id
 
 
@@ -563,6 +598,7 @@ async def api_admin_products(admin_id: int = Depends(require_admin)):
                 "description": p.description,
                 "requires_color": p.requires_color,
                 "photo_url": f"/api/photos/{p.photo_file_id}" if p.photo_file_id else None,
+                "photo_black_url": f"/api/photos/{p.photo_black_file_id}" if getattr(p, 'photo_black_file_id', None) else None,
                 "is_active": p.is_active,
                 "sizes": [{"size": s.size, "price": float(s.price)} for s in sizes],
             })
@@ -610,13 +646,32 @@ async def api_admin_product_photo(
     from aiogram.types import BufferedInputFile
 
     # Send to admin's own chat to get file_id
+    photo_bytes = resize_image_for_telegram(photo_bytes)
     input_file = BufferedInputFile(photo_bytes, filename="product.jpg")
-    msg = await bot.send_photo(chat_id=admin_id, photo=input_file)
-    file_id = msg.photo[-1].file_id
+    
     try:
-        await bot.delete_message(chat_id=admin_id, message_id=msg.message_id)
-    except Exception:
-        pass
+        msg = await bot.send_photo(chat_id=admin_id, photo=input_file, disable_notification=True)
+        file_id = msg.photo[-1].file_id
+        try:
+            await bot.delete_message(chat_id=admin_id, message_id=msg.message_id)
+        except Exception:
+            pass
+    except Exception as e:
+        # Fallback to group chat if PM is forbidden
+        async with AsyncSessionLocal() as session:
+            binding = await get_active_admin_binding(session)
+        if binding:
+            try:
+                msg = await bot.send_photo(chat_id=binding.chat_id, photo=input_file, disable_notification=True)
+                file_id = msg.photo[-1].file_id
+                try:
+                    await bot.delete_message(chat_id=binding.chat_id, message_id=msg.message_id)
+                except Exception:
+                    pass
+            except Exception as inner_e:
+                raise HTTPException(status_code=400, detail=f"upload_failed_in_group: {inner_e}")
+        else:
+            raise HTTPException(status_code=400, detail=f"upload_failed: {e}")
 
     async with AsyncSessionLocal() as session:
         async with session.begin():
@@ -625,6 +680,54 @@ async def api_admin_product_photo(
                 raise HTTPException(status_code=404, detail="product_not_found")
             await set_product_photo(session, product, file_id)
     return {"ok": True, "photo_url": f"/api/photos/{file_id}"}
+
+
+@router.post("/admin/products/{product_id}/photo_black")
+async def api_admin_product_photo_black(
+    product_id: int,
+    photo: UploadFile = File(...),
+    admin_id: int = Depends(require_admin),
+):
+    """Upload product black photo via Telegram Bot API to get a file_id."""
+    photo_bytes = await photo.read()
+
+    from app.main import bot
+    from aiogram.types import BufferedInputFile
+
+    photo_bytes = resize_image_for_telegram(photo_bytes)
+    input_file = BufferedInputFile(photo_bytes, filename="product_black.jpg")
+    
+    try:
+        msg = await bot.send_photo(chat_id=admin_id, photo=input_file, disable_notification=True)
+        file_id = msg.photo[-1].file_id
+        try:
+            await bot.delete_message(chat_id=admin_id, message_id=msg.message_id)
+        except Exception:
+            pass
+    except Exception as e:
+        async with AsyncSessionLocal() as session:
+            binding = await get_active_admin_binding(session)
+        if binding:
+            try:
+                msg = await bot.send_photo(chat_id=binding.chat_id, photo=input_file, disable_notification=True)
+                file_id = msg.photo[-1].file_id
+                try:
+                    await bot.delete_message(chat_id=binding.chat_id, message_id=msg.message_id)
+                except Exception:
+                    pass
+            except Exception as inner_e:
+                raise HTTPException(status_code=400, detail=f"upload_failed_in_group: {inner_e}")
+        else:
+            raise HTTPException(status_code=400, detail=f"upload_failed: {e}")
+
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            product = await get_product(session, product_id)
+            if not product:
+                raise HTTPException(status_code=404, detail="product_not_found")
+            from app.services.catalog import set_product_black_photo
+            await set_product_black_photo(session, product, file_id)
+    return {"ok": True, "photo_black_url": f"/api/photos/{file_id}"}
 
 
 @router.post("/admin/products/{product_id}/toggle")

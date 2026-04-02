@@ -25,7 +25,13 @@ async def init_db() -> None:
     # Ensure color columns exist
     try:
         async with engine.begin() as conn:
-            await conn.execute(text("ALTER TABLE products ADD COLUMN requires_color BOOLEAN DEFAULT FALSE"))
+            await conn.execute(text("ALTER TABLE products ADD COLUMN requires_color BOOLEAN DEFAULT FALSE NOT NULL"))
+    except Exception:
+        pass
+
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("ALTER TABLE products ADD COLUMN photo_black_file_id VARCHAR(255)"))
     except Exception:
         pass
 

@@ -37,6 +37,10 @@ async def set_product_photo(session: AsyncSession, product: Product, photo_file_
     product.photo_file_id = photo_file_id
     await session.flush()
 
+async def set_product_black_photo(session: AsyncSession, product: Product, photo_file_id: str) -> None:
+    product.photo_black_file_id = photo_file_id
+    await session.flush()
+
 
 async def archive_product(session: AsyncSession, product: Product, is_active: bool) -> None:
     product.is_active = is_active

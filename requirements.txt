@@ -9,3 +9,4 @@ python-dotenv==1.1.1
 python-multipart==0.0.20
 aiohttp==3.11.18
 gspread==6.2.1
+Pillow==10.2.0

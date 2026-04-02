@@ -48,11 +48,12 @@ const catalog = {
 
         try {
             const p = await api.getProduct(id);
-            document.getElementById('productDetailTitle').textContent = p.title;
+            this._currentProductPhotoUrl = p.photo_url || '';
+            this._currentProductPhotoBlackUrl = p.photo_black_url || '';
 
             container.innerHTML = `
-                ${p.photo_url
-                    ? `<img class="product-detail-image" src="${p.photo_url}" alt="${this._esc(p.title)}">`
+                ${p.photo_url || p.photo_black_url
+                    ? `<img class="product-detail-image" id="productDetailImage" src="${p.photo_url || p.photo_black_url}" alt="${this._esc(p.title)}">`
                     : ''
                 }
                 <div class="product-detail-title">${this._esc(p.title)}</div>
@@ -99,6 +100,16 @@ const catalog = {
     selectColor(btn) {
         document.querySelectorAll('#colorSelector .size-btn').forEach(b => b.classList.remove('selected'));
         btn.classList.add('selected');
+        
+        const img = document.getElementById('productDetailImage');
+        if (img) {
+            const color = btn.dataset.color;
+            if (color === 'Чорний' && this._currentProductPhotoBlackUrl) {
+                img.src = this._currentProductPhotoBlackUrl;
+            } else if (this._currentProductPhotoUrl) {
+                img.src = this._currentProductPhotoUrl;
+            }
+        }
     },
 
     async addToCart(productId) {

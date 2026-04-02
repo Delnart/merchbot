@@ -73,6 +73,7 @@ class ApiClient {
     createProduct(data) { return this.post('/api/admin/products', data); }
     updateProduct(id, data) { return this.put(`/api/admin/products/${id}`, data); }
     uploadProductPhoto(id, formData) { return this.upload(`/api/admin/products/${id}/photo`, formData); }
+    uploadProductBlackPhoto(id, formData) { return this.upload(`/api/admin/products/${id}/photo_black`, formData); }
     toggleProduct(id) { return this.post(`/api/admin/products/${id}/toggle`); }
 }
 
