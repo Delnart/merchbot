@@ -495,7 +495,15 @@ def resize_image_for_telegram(photo_bytes: bytes) -> bytes:
         import io
         img = Image.open(io.BytesIO(photo_bytes))
         img.thumbnail((1920, 1920))
-        if img.mode in ("RGBA", "P"):
+        if img.mode in ("RGBA", "LA", "P"):
+            if img.mode == "P":
+                img = img.convert("RGBA")
+            bg = Image.new("RGB", img.size, (255, 255, 255))
+            # Use alpha channel as mask if it exists
+            mask = img.split()[3] if len(img.split()) >= 4 else None
+            bg.paste(img, mask=mask)
+            img = bg
+        elif img.mode != "RGB":
             img = img.convert("RGB")
         out = io.BytesIO()
         img.save(out, format="JPEG", quality=85)
