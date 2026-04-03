@@ -486,21 +486,8 @@ async def api_checkout(
     )
 
     # Notify admin chat
-    debug_msg = "DEBUG BINDING: " + str(binding.chat_id if binding else None) + " | FILE ID: " + str(receipt_file_id)
-    try:
-        from app.main import bot
-        await bot.send_message(telegram_id, debug_msg)
-    except Exception:
-        pass
-
     if binding is not None:
         await _notify_admin_chat(binding, order, final_name, final_phone, delivery_method, address, receipt_file_id)
-    else:
-        try:
-            from app.main import bot
-            await bot.send_message(telegram_id, "CRITICAL: BINDING IS NONE. Admin chat is not linked in the database!")
-        except Exception:
-            pass
 
     return {"ok": True, "order_id": order.id}
 
@@ -604,17 +591,38 @@ async def _notify_admin_chat(binding, order, name, phone, delivery_method, addre
                 if db_order:
                     await set_order_admin_message(session, db_order, sent.message_id)
     except Exception as e:
-        import traceback
-        err_msg = traceback.format_exc()
-        try:
-            await bot.send_message(order.telegram_id, f"DEBUG NOTIFY ERR: {e}\n\n{err_msg[:3000]}")
-        except Exception:
-            pass
-
+        from aiogram.exceptions import TelegramMigrateToChat
+        if isinstance(e, TelegramMigrateToChat) and e.migrate_to_chat_id:
+            # Auto-migrate the database to the new supergroup ID
+            async with AsyncSessionLocal() as session:
+                async with session.begin():
+                    current = await get_active_admin_binding(session)
+                    if current:
+                        current.chat_id = e.migrate_to_chat_id
+            
+            # Retry sending with the new chat_id
+            try:
+                sent = await bot.send_photo(
+                    e.migrate_to_chat_id,
+                    photo=receipt_file_id,
+                    caption=caption,
+                    reply_markup=order_status_keyboard(order.id, OrderStatus.pending),
+                    parse_mode="HTML",
+                )
+                async with AsyncSessionLocal() as session:
+                    async with session.begin():
+                        from app.services.orders import get_order
+                        db_order = await get_order(session, order.id)
+                        if db_order:
+                            await set_order_admin_message(session, db_order, sent.message_id)
+                return
+            except Exception:
+                pass
+        
         try:
             sent = await bot.send_message(
                 binding.chat_id,
-                text=caption + f"\n\n⚠️ <i>Помилка завантаження чека: {e}</i>",
+                text=caption + f"\n\n⚠️ <i>Помилка: {e}</i>",
                 reply_markup=order_status_keyboard(order.id, OrderStatus.pending),
                 parse_mode="HTML",
             )
@@ -624,11 +632,8 @@ async def _notify_admin_chat(binding, order, name, phone, delivery_method, addre
                     db_order = await get_order(session, order.id)
                     if db_order:
                         await set_order_admin_message(session, db_order, sent.message_id)
-        except Exception as e2:
-            try:
-                await bot.send_message(order.telegram_id, f"DEBUG FALLBACK ERR: {e2}")
-            except Exception:
-                pass
+        except Exception:
+            pass
 
 
 # ── Admin endpoints ──────────────────────────────────────────────────────────
