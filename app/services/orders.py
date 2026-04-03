@@ -72,3 +72,8 @@ async def set_order_status(session: AsyncSession, order: Order, status: OrderSta
 async def set_order_admin_message(session: AsyncSession, order: Order, message_id: int) -> None:
     order.admin_message_id = message_id
     await session.flush()
+
+async def delete_all_orders(session: AsyncSession) -> None:
+    from sqlalchemy import delete
+    await session.execute(delete(Order))
+    await session.flush()

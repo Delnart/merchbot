@@ -100,6 +100,25 @@ async def admin_handler(message: Message, bot: Bot, state: FSMContext) -> None:
     await message.answer("🔧 Панель адміністратора:", reply_markup=admin_main_keyboard())
 
 
+@router.message(Command("clear_orders"))
+async def clear_orders_handler(message: Message, bot: Bot) -> None:
+    if message.chat.type != "private" or message.from_user is None:
+        return
+    if not await check_admin_rights(message.from_user.id, bot):
+        await message.answer("У вас немає доступу до цієї команди.", show_alert=True)
+        return
+        
+    from app.services.orders import delete_all_orders
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            await delete_all_orders(session)
+            
+    from app.services.google_sheets import clear_orders_sheet
+    clear_orders_sheet()
+    
+    await message.answer("✅ Всі замовлення було успішно видалено з бази даних та таблиці Google Sheets.")
+
+
 @router.callback_query(F.data == "admin:main")
 async def admin_main_callback(callback: CallbackQuery, bot: Bot, state: FSMContext) -> None:
     await state.clear()
@@ -276,7 +295,8 @@ async def order_status_handler(callback: CallbackQuery, bot: Bot) -> None:
         order_id=order_id,
         status=status.value,
         total=order_total,
-        phone=f"{order_recipient} / {order_phone}" if order_recipient else order_phone,
+        name=order_recipient if order_recipient else "",
+        phone=order_phone,
         delivery=order_delivery,
         items_str=items_str,
         admin=admin_name if status != OrderStatus.cancelled else "",

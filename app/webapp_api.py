@@ -477,7 +477,8 @@ async def api_checkout(
         order_id=order.id,
         status=order.status.value,
         total=float(order.total_amount),
-        phone=f"{final_name} / {final_phone}",
+        name=final_name,
+        phone=final_phone,
         delivery=f"{_delivery_label(delivery_method)} {address}",
         items_str=items_str,
     )
