@@ -561,7 +561,7 @@ async def _notify_admin_chat(binding, order, name, phone, delivery_method, addre
 
     lines = [
         f"🔔 <b>Замовлення #{order.id}</b> [{status_labels.get(order.status, '')}]",
-        f"👤 Клієнт: <a href='tg://user?id={order.telegram_id}'>Профіль ({order.telegram_id})</a>",
+        f'👤 Клієнт: <a href="tg://user?id={order.telegram_id}">Профіль ({order.telegram_id})</a>',
         f"📋 Отримувач: {name}",
         f"📞 Телефон: {phone}",
         f"🚚 Спосіб: {_delivery_label(delivery_method)} | Адреса: {address}",
