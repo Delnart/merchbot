@@ -486,8 +486,21 @@ async def api_checkout(
     )
 
     # Notify admin chat
+    debug_msg = "DEBUG BINDING: " + str(binding.chat_id if binding else None) + " | FILE ID: " + str(receipt_file_id)
+    try:
+        from app.main import bot
+        await bot.send_message(telegram_id, debug_msg)
+    except Exception:
+        pass
+
     if binding is not None:
         await _notify_admin_chat(binding, order, final_name, final_phone, delivery_method, address, receipt_file_id)
+    else:
+        try:
+            from app.main import bot
+            await bot.send_message(telegram_id, "CRITICAL: BINDING IS NONE. Admin chat is not linked in the database!")
+        except Exception:
+            pass
 
     return {"ok": True, "order_id": order.id}
 
@@ -591,7 +604,13 @@ async def _notify_admin_chat(binding, order, name, phone, delivery_method, addre
                 if db_order:
                     await set_order_admin_message(session, db_order, sent.message_id)
     except Exception as e:
-        print(f"Failed to send photo: {e}")
+        import traceback
+        err_msg = traceback.format_exc()
+        try:
+            await bot.send_message(order.telegram_id, f"DEBUG NOTIFY ERR: {e}\n\n{err_msg[:3000]}")
+        except Exception:
+            pass
+
         try:
             sent = await bot.send_message(
                 binding.chat_id,
@@ -606,7 +625,10 @@ async def _notify_admin_chat(binding, order, name, phone, delivery_method, addre
                     if db_order:
                         await set_order_admin_message(session, db_order, sent.message_id)
         except Exception as e2:
-            print(f"Fallback send_message failed: {e2}")
+            try:
+                await bot.send_message(order.telegram_id, f"DEBUG FALLBACK ERR: {e2}")
+            except Exception:
+                pass
 
 
 # ── Admin endpoints ──────────────────────────────────────────────────────────
