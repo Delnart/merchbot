@@ -590,8 +590,23 @@ async def _notify_admin_chat(binding, order, name, phone, delivery_method, addre
                 db_order = await get_order(session, order.id)
                 if db_order:
                     await set_order_admin_message(session, db_order, sent.message_id)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Failed to send photo: {e}")
+        try:
+            sent = await bot.send_message(
+                binding.chat_id,
+                text=caption + f"\n\n⚠️ <i>Помилка завантаження чека: {e}</i>",
+                reply_markup=order_status_keyboard(order.id, OrderStatus.pending),
+                parse_mode="HTML",
+            )
+            async with AsyncSessionLocal() as session:
+                async with session.begin():
+                    from app.services.orders import get_order
+                    db_order = await get_order(session, order.id)
+                    if db_order:
+                        await set_order_admin_message(session, db_order, sent.message_id)
+        except Exception as e2:
+            print(f"Fallback send_message failed: {e2}")
 
 
 # ── Admin endpoints ──────────────────────────────────────────────────────────

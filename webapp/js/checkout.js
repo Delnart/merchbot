@@ -176,18 +176,48 @@ const checkout = {
         this.validateForm();
     },
 
-    onReceiptSelected(e) {
+    async compressImage(file) {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+                    const MAX_SIZE = 1200;
+                    if (width > height && width > MAX_SIZE) {
+                        height *= MAX_SIZE / width;
+                        width = MAX_SIZE;
+                    } else if (height > MAX_SIZE) {
+                        width *= MAX_SIZE / height;
+                        height = MAX_SIZE;
+                    }
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    canvas.toBlob((blob) => {
+                        resolve(new File([blob], 'receipt.jpg', { type: 'image/jpeg' }));
+                    }, 'image/jpeg', 0.7);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+    },
+
+    async onReceiptSelected(e) {
         const file = e.target.files[0];
         if (!file) return;
-        this.receiptFile = file;
         document.getElementById('receiptUploadArea').classList.add('has-file');
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            document.getElementById('receiptPreviewContainer').innerHTML = `
-                <img class="file-upload-preview" src="${ev.target.result}" alt="">
-                <div class="file-upload-text" style="margin-top:8px">Фото завантажено</div>`;
-        };
-        reader.readAsDataURL(file);
+        document.getElementById('receiptPreviewContainer').innerHTML = `
+            <div class="file-upload-text">Обробка фото...</div>`;
+        this.receiptFile = await this.compressImage(file);
+        const url = URL.createObjectURL(this.receiptFile);
+        document.getElementById('receiptPreviewContainer').innerHTML = `
+            <img class="file-upload-preview" src="${url}" alt="">
+            <div class="file-upload-text" style="margin-top:8px">Фото завантажено</div>`;
         this.validateForm();
     },
 
