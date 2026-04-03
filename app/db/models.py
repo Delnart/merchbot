@@ -14,6 +14,7 @@ class DeliveryMethod(str, enum.Enum):
     nova_poshta = "nova_poshta"
     campus = "campus"
     dayf = "dayf"
+    later_campus = "later_campus"
 
 class UserProfile(Base):
     __tablename__ = "user_profiles"

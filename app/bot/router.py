@@ -33,7 +33,7 @@ async def check_admin_rights(user_id: int, bot: Bot) -> bool:
 
 
 def _delivery_label(method: str) -> str:
-    return {"nova_poshta": "Нова Пошта", "campus": "На DayF", "dayf": "DayF"}.get(method, method)
+    return {"nova_poshta": "Нова Пошта", "campus": "На DayF", "dayf": "DayF", "later_campus": "Пізніше в корпусі"}.get(method, method)
 
 
 # ── /start — sends WebApp button ────────────────────────────────────────────
@@ -337,11 +337,12 @@ async def process_feedback(message: Message, state: FSMContext) -> None:
         return
     user = message.from_user
     username_str = f"@{user.username}" if user.username else user.full_name
+    msg_text = message.text or message.caption or ""
     text = (
         f"📩 <b>Зворотній зв'язок</b>\n"
         f"#T{user.id}\n"
         f"Від: {username_str} ({user.id})\n\n"
-        f"{message.text}"
+        f"{msg_text}"
     )
     await message.bot.send_message(admin_binding.chat_id, text, parse_mode="HTML")
     await message.answer("✅ Ваше повідомлення надіслано адміністраторам!")
@@ -368,6 +369,35 @@ async def admin_reply_to_user(message: Message) -> None:
         await message.react([ReactionTypeEmoji(emoji="👍")])
     except Exception:
         pass
+
+
+@router.message(F.reply_to_message & (F.chat.type == "private"))
+async def user_reply_to_admin(message: Message) -> None:
+    if not message.reply_to_message or message.reply_to_message.from_user.id != message.bot.id:
+        return
+        
+    replied_text = message.reply_to_message.text or message.reply_to_message.caption or ""
+    if "Відповідь від адміністратора" not in replied_text and "Ваше повідомлення надіслано" not in replied_text:
+        return
+
+    async with AsyncSessionLocal() as session:
+        admin_binding = await get_active_admin_binding(session)
+    if not admin_binding:
+        await message.answer("Помилка: чат адміністраторів не налаштований.")
+        return
+
+    user = message.from_user
+    username_str = f"@{user.username}" if user.username else user.full_name
+    msg_text = message.text or message.caption or "(без тексту)"
+    
+    text = (
+        f"📩 <b>Відповідь від користувача</b>\n"
+        f"#T{user.id}\n"
+        f"Від: {username_str} ({user.id})\n\n"
+        f"{msg_text}"
+    )
+    await message.bot.send_message(admin_binding.chat_id, text, parse_mode="HTML")
+    await message.answer("✅ Ваше повідомлення надіслано адміністраторам!")
 
 
 @router.errors()

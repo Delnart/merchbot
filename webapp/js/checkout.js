@@ -102,6 +102,10 @@ const checkout = {
                     <span class="selection-card-text">На DayF</span>
                 </div>
             ` : ''}
+            <div class="selection-card" onclick="checkout.selectDelivery('later_campus', this)">
+                <div class="radio-dot"></div>
+                <span class="selection-card-text">Пізніше в корпусі</span>
+            </div>
 
             <div id="npAddressBlock" style="display:none">
                 <div class="form-group">
@@ -212,7 +216,7 @@ const checkout = {
             formData.append('delivery_method', this.selectedDelivery);
             const address = this.selectedDelivery === 'nova_poshta' 
                 ? document.getElementById('checkoutAddress').value.trim()
-                : (this.selectedDelivery === 'campus' ? 'На DayF' : 'На DayF');
+                : (this.selectedDelivery === 'campus' ? 'На DayF' : (this.selectedDelivery === 'later_campus' ? 'Пізніше в корпусі' : 'На DayF'));
             formData.append('delivery_address', address);
 
             if (this.selectedRecipientId) {

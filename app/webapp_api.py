@@ -389,7 +389,7 @@ async def api_recipient_set_default(recipient_id: int, telegram_id: int = Depend
 # ── Checkout endpoint ────────────────────────────────────────────────────────
 
 def _delivery_label(method: str) -> str:
-    return {"nova_poshta": "Нова Пошта", "campus": "На DayF", "dayf": "DayF"}.get(method, method)
+    return {"nova_poshta": "Нова Пошта", "campus": "На DayF", "dayf": "DayF", "later_campus": "Пізніше в корпусі"}.get(method, method)
 
 
 @router.post("/checkout")
@@ -450,6 +450,8 @@ async def api_checkout(
         address = "На DayF"
     elif delivery_method == "dayf":
         address = "На DayF"
+    elif delivery_method == "later_campus":
+        address = "Пізніше в корпусі"
     else:
         address = delivery_address.strip()
 
