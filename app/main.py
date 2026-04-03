@@ -22,7 +22,10 @@ dp = build_dispatcher()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    await init_db()
+    try:
+        await init_db()
+    except Exception as e:
+        print(f"Error during init_db: {e}")
     yield
 
 
