@@ -320,12 +320,31 @@ async def order_status_handler(callback: CallbackQuery, bot: Bot) -> None:
 
 
 # ── Support / Feedback ───────────────────────────────────────────────────────
+import asyncio
+
+active_media_groups = {}
+
+async def send_feedback_message(message: Message, target_id: int, text: str):
+    try:
+        if message.photo:
+            await message.bot.send_photo(target_id, photo=message.photo[-1].file_id, caption=text, parse_mode="HTML")
+        elif message.document:
+            await message.bot.send_document(target_id, document=message.document.file_id, caption=text, parse_mode="HTML")
+        elif message.video:
+            await message.bot.send_video(target_id, video=message.video.file_id, caption=text, parse_mode="HTML")
+        elif message.audio:
+            await message.bot.send_audio(target_id, audio=message.audio.file_id, caption=text, parse_mode="HTML")
+        elif message.voice:
+            await message.bot.send_voice(target_id, voice=message.voice.file_id, caption=text, parse_mode="HTML")
+        else:
+            await message.bot.send_message(target_id, text=text, parse_mode="HTML")
+    except Exception:
+        pass
 
 @router.message(F.text.startswith("/support"))
 async def support_start(message: Message, state: FSMContext) -> None:
     await state.set_state(FeedbackState.waiting_message)
-    await message.answer("Напишіть ваше повідомлення для адміністраторів:")
-
+    await message.answer("Напишіть ваше повідомлення для адміністраторів (можна прикріпити фото):")
 
 @router.message(FeedbackState.waiting_message)
 async def process_feedback(message: Message, state: FSMContext) -> None:
@@ -344,9 +363,23 @@ async def process_feedback(message: Message, state: FSMContext) -> None:
         f"Від: {username_str} ({user.id})\n\n"
         f"{msg_text}"
     )
-    await message.bot.send_message(admin_binding.chat_id, text, parse_mode="HTML")
-    await message.answer("✅ Ваше повідомлення надіслано адміністраторам!")
-    await state.clear()
+    await send_feedback_message(message, admin_binding.chat_id, text)
+    
+    if message.media_group_id:
+        active_media_groups[message.media_group_id] = {
+            "target_id": admin_binding.chat_id,
+            "type": "user_to_admin",
+            "user_id": user.id,
+            "username_str": username_str,
+            "title": "Зворотній зв'язок"
+        }
+        if len(active_media_groups) > 1000:
+            active_media_groups.clear()
+            
+    current_state = await state.get_state()
+    if current_state:
+        await message.answer("✅ Ваше повідомлення надіслано адміністраторам!")
+        await state.set_state(None)
 
 
 @router.message(F.reply_to_message & F.chat.type.in_(["group", "supergroup"]))
@@ -361,11 +394,18 @@ async def admin_reply_to_user(message: Message) -> None:
         return
     try:
         target_id = int(match.group(1))
-        await message.bot.send_message(
-            target_id,
-            f"💬 <b>Відповідь від адміністратора:</b>\n\n{message.text}",
-            parse_mode="HTML",
-        )
+        msg_text = message.text or message.caption or ""
+        out_text = f"💬 <b>Відповідь від адміністратора:</b>\n\n{msg_text}"
+        await send_feedback_message(message, target_id, out_text)
+        
+        if message.media_group_id:
+            active_media_groups[message.media_group_id] = {
+                "target_id": target_id,
+                "type": "admin_to_user"
+            }
+            if len(active_media_groups) > 1000:
+                active_media_groups.clear()
+        
         await message.react([ReactionTypeEmoji(emoji="👍")])
     except Exception:
         pass
@@ -396,8 +436,44 @@ async def user_reply_to_admin(message: Message) -> None:
         f"Від: {username_str} ({user.id})\n\n"
         f"{msg_text}"
     )
-    await message.bot.send_message(admin_binding.chat_id, text, parse_mode="HTML")
+    await send_feedback_message(message, admin_binding.chat_id, text)
+    
+    if message.media_group_id:
+        active_media_groups[message.media_group_id] = {
+            "target_id": admin_binding.chat_id,
+            "type": "user_to_admin",
+            "user_id": user.id,
+            "username_str": username_str,
+            "title": "Відповідь від користувача"
+        }
+        if len(active_media_groups) > 1000:
+            active_media_groups.clear()
+
     await message.answer("✅ Ваше повідомлення надіслано адміністраторам!")
+
+@router.message(F.media_group_id)
+async def process_media_group_followups(message: Message):
+    mg_id = message.media_group_id
+    if mg_id not in active_media_groups:
+        await asyncio.sleep(0.5)
+        if mg_id not in active_media_groups:
+            return
+            
+    info = active_media_groups[mg_id]
+    msg_text = message.text or message.caption or ""
+    
+    if info["type"] == "admin_to_user":
+        out_text = f"💬 <b>Відповідь від адміністратора:</b>\n\n{msg_text}" if msg_text else ""
+        await send_feedback_message(message, info["target_id"], out_text)
+        
+    elif info["type"] == "user_to_admin":
+        text = (
+            f"📩 <b>{info['title']}</b>\n"
+            f"#T{info['user_id']}\n"
+            f"Від: {info['username_str']} ({info['user_id']})\n\n"
+            f"{msg_text}"
+        )
+        await send_feedback_message(message, info["target_id"], text)
 
 
 @router.errors()
