@@ -1,5 +1,6 @@
 from pydantic import Field, Json
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 class Settings(BaseSettings):
     bot_token: str = Field(validation_alias="BOT_TOKEN")
@@ -41,11 +42,26 @@ class Settings(BaseSettings):
     def normalized_database_url(self) -> str:
         url = self.database_url.strip()
         if url.startswith("postgresql+asyncpg://") or url.startswith("sqlite+aiosqlite://"):
-            return url
-        if url.startswith("postgres://"):
-            return "postgresql+asyncpg://" + url[len("postgres://") :]
-        if url.startswith("postgresql://"):
-            return "postgresql+asyncpg://" + url[len("postgresql://") :]
-        return url
+            normalized = url
+        elif url.startswith("postgres://"):
+            normalized = "postgresql+asyncpg://" + url[len("postgres://") :]
+        elif url.startswith("postgresql://"):
+            normalized = "postgresql+asyncpg://" + url[len("postgresql://") :]
+        else:
+            normalized = url
+
+        if not normalized.startswith("postgresql+asyncpg://"):
+            return normalized
+
+        parsed = urlparse(normalized)
+        query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        sslmode = query.pop("sslmode", "").lower()
+        if sslmode:
+            if sslmode in {"require", "verify-ca", "verify-full"}:
+                query.setdefault("ssl", "require")
+            elif sslmode == "disable":
+                query.setdefault("ssl", "false")
+
+        return urlunparse(parsed._replace(query=urlencode(query)))
 
 settings = Settings()
