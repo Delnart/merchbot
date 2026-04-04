@@ -36,7 +36,7 @@ async def get_telegram_user(x_telegram_init_data: str = Header(alias="X-Telegram
     """Validate Telegram initData and return user dict."""
     user = validate_init_data(x_telegram_init_data)
     if user is None:
-        raise HTTPException(status_code=401, detail="invalid_init_data")
+        raise HTTPException(status_code=401, detail="open_via_telegram_required")
     return user
 
 
@@ -560,13 +560,13 @@ async def _notify_admin_chat(binding, order, name, phone, delivery_method, addre
     }
 
     lines = [
-        f"🔔 <b>Замовлення #{order.id}</b> [{status_labels.get(order.status, '')}]",
-        f'👤 Клієнт: <a href="tg://user?id={order.telegram_id}">Профіль ({order.telegram_id})</a>',
+        f"🔔 Замовлення #{order.id} [{status_labels.get(order.status, '')}]",
+        f"👤 Клієнт: tg://user?id={order.telegram_id} ({order.telegram_id})",
         f"📋 Отримувач: {name}",
         f"📞 Телефон: {phone}",
         f"🚚 Спосіб: {_delivery_label(delivery_method)} | Адреса: {address}",
         f"💰 Сума: {Decimal(order.total_amount)} {order.currency}",
-        "\n📦 <b>Позиції:</b>",
+        "\n📦 Позиції:",
     ]
     for item in order.items:
         color_str = f" | {item.color}" if item.color else ""
@@ -582,7 +582,6 @@ async def _notify_admin_chat(binding, order, name, phone, delivery_method, addre
             photo=receipt_file_id,
             caption=caption,
             reply_markup=order_status_keyboard(order.id, OrderStatus.pending),
-            parse_mode="HTML",
         )
         async with AsyncSessionLocal() as session:
             async with session.begin():
@@ -607,7 +606,6 @@ async def _notify_admin_chat(binding, order, name, phone, delivery_method, addre
                     photo=receipt_file_id,
                     caption=caption,
                     reply_markup=order_status_keyboard(order.id, OrderStatus.pending),
-                    parse_mode="HTML",
                 )
                 async with AsyncSessionLocal() as session:
                     async with session.begin():
@@ -622,9 +620,8 @@ async def _notify_admin_chat(binding, order, name, phone, delivery_method, addre
         try:
             sent = await bot.send_message(
                 binding.chat_id,
-                text=caption + f"\n\n⚠️ <i>Помилка: {e}</i>",
+                text=caption + f"\n\n⚠️ Помилка: {e}",
                 reply_markup=order_status_keyboard(order.id, OrderStatus.pending),
-                parse_mode="HTML",
             )
             async with AsyncSessionLocal() as session:
                 async with session.begin():

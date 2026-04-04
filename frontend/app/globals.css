@@ -1,0 +1,249 @@
+@import "tailwindcss";
+
+:root {
+  --bg-start: #f6f1e8;
+  --bg-end: #e4efea;
+  --card: #fffdf8;
+  --text: #1f2d2b;
+  --muted: #59716d;
+  --accent: #146356;
+  --stroke: #d9e3de;
+}
+
+@theme inline {
+  --color-background: var(--bg-start);
+  --color-foreground: var(--text);
+  --font-sans: var(--font-manrope);
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-manrope), sans-serif;
+  background: radial-gradient(circle at 20% 10%, #fff7e2 0%, transparent 35%),
+    radial-gradient(circle at 90% 90%, #cce7df 0%, transparent 30%),
+    linear-gradient(150deg, var(--bg-start), var(--bg-end));
+  min-height: 100vh;
+}
+
+.page {
+  width: min(1060px, calc(100% - 28px));
+  margin: 18px auto 36px;
+  display: grid;
+  gap: 14px;
+}
+
+.panel {
+  border: 1px solid var(--stroke);
+  border-radius: 20px;
+  background: var(--card);
+  padding: 20px;
+  box-shadow: 0 12px 24px rgba(20, 99, 86, 0.08);
+}
+
+.hero h1 {
+  font-size: clamp(1.5rem, 4vw, 2.2rem);
+  margin: 0;
+}
+
+.hero p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.catalogGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+}
+
+.productCard {
+  border: 1px solid var(--stroke);
+  border-radius: 16px;
+  padding: 10px;
+  background: #fff;
+}
+
+.productCard h2 {
+  margin: 10px 0 6px;
+  font-size: 1rem;
+}
+
+.productCard p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.priceRow {
+  margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+
+.productImageWrap {
+  aspect-ratio: 1/1;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--stroke);
+}
+
+.productImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.productImageFallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.miniWrap {
+  width: min(980px, calc(100% - 24px));
+  margin: 12px auto 84px;
+}
+
+.topBar {
+  margin-bottom: 10px;
+}
+
+.topBar h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.contentCard {
+  border: 1px solid var(--stroke);
+  border-radius: 18px;
+  background: var(--card);
+  padding: 14px;
+  box-shadow: 0 8px 18px rgba(20, 99, 86, 0.08);
+}
+
+.stack {
+  display: grid;
+  gap: 10px;
+}
+
+.centered {
+  text-align: center;
+}
+
+.inlineButtons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.inlineButtons.wrap {
+  flex-wrap: wrap;
+}
+
+.chip {
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.chip.active {
+  border-color: var(--accent);
+  background: #e4f4ef;
+  color: var(--accent);
+}
+
+.chip.danger {
+  border-color: #dba7a7;
+  color: #9b2c2c;
+}
+
+.mainBtn {
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  padding: 10px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mainBtn.asLink {
+  text-decoration: none;
+  text-align: center;
+}
+
+.input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  padding: 10px;
+  font: inherit;
+}
+
+.checkboxRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.heroImage {
+  width: 100%;
+  border-radius: 12px;
+  max-height: 440px;
+  object-fit: cover;
+}
+
+.cartRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.cartRow h3,
+.cartRow p {
+  margin: 0;
+}
+
+.totalLine {
+  font-weight: 700;
+}
+
+.bottomNav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 253, 248, 0.95);
+  border-top: 1px solid var(--stroke);
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  padding: 10px 8px;
+  backdrop-filter: blur(6px);
+}
+
+.navBtn {
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text);
+  padding: 8px 12px;
+}
+
+.navBtn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}

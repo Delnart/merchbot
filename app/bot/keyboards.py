@@ -6,7 +6,7 @@ from app.db.models import OrderStatus
 
 def main_menu_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    webapp_url = f"{settings.app_base_url.rstrip('/')}/webapp/index.html"
+    webapp_url = settings.resolved_webapp_url
     b.button(text="🛍 Відкрити каталог", web_app=WebAppInfo(url=webapp_url))
     b.adjust(1)
     return b.as_markup()
@@ -21,7 +21,7 @@ def persistent_main_keyboard() -> ReplyKeyboardMarkup:
 
 def admin_main_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    webapp_url = f"{settings.app_base_url.rstrip('/')}/webapp/index.html?page=admin"
+    webapp_url = f"{settings.resolved_webapp_url}?page=admin"
     b.button(text="📦 Управління товарами", web_app=WebAppInfo(url=webapp_url))
     b.button(text="💰 Банка Monobank", callback_data="admin:set_mono")
     b.button(text="💳 Номер картки", callback_data="admin:set_card")

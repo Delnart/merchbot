@@ -6,11 +6,35 @@ class Settings(BaseSettings):
     webhook_secret: str = Field(validation_alias="WEBHOOK_SECRET")
     database_url: str = Field(validation_alias="DATABASE_URL")
     app_base_url: str = Field(default="", validation_alias="APP_BASE_URL")
+    webapp_url: str = Field(default="", validation_alias="WEBAPP_URL")
     admin_default_currency: str = Field(default="UAH", validation_alias="ADMIN_DEFAULT_CURRENCY")
+    admin_owner_ids_raw: str = Field(default="", validation_alias="ADMIN_OWNER_IDS")
+    broadcast_delay_ms: int = Field(default=100, validation_alias="BROADCAST_DELAY_MS")
     
     google_creds_json: Json | None = Field(default=None, validation_alias="GOOGLE_CREDS_JSON")
     google_sheets_id: str = Field(default="", validation_alias="GOOGLE_SHEETS_ID")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @property
+    def admin_owner_ids(self) -> set[int]:
+        ids = set()
+        for chunk in self.admin_owner_ids_raw.split(","):
+            val = chunk.strip()
+            if not val:
+                continue
+            try:
+                ids.add(int(val))
+            except ValueError:
+                continue
+        return ids
+
+    @property
+    def resolved_webapp_url(self) -> str:
+        if self.webapp_url:
+            return self.webapp_url.rstrip("/")
+        if not self.app_base_url:
+            return "http://localhost:3000"
+        return f"{self.app_base_url.rstrip('/')}/"
 
 settings = Settings()

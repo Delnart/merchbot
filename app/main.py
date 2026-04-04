@@ -1,14 +1,12 @@
-import os
 import traceback
 from contextlib import asynccontextmanager
-from pathlib import Path
+from html import escape
 
 from aiogram import Bot
 from aiogram.types import Update
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.bot.router import build_dispatcher
 from app.config import settings
@@ -37,8 +35,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     try:
         await bot.send_message(
             chat_id=1876094081,
-            text=f"⚠️ <b>FastAPI Error:</b>\n<pre>{error_msg[:3000]}</pre>",
-            parse_mode="HTML"
+            text=f"FastAPI error:\n{escape(error_msg[:3500])}",
         )
     except Exception:
         pass
@@ -54,17 +51,9 @@ app.add_middleware(
 
 app.include_router(webapp_router)
 
-# Mount static files for the Mini App
-webapp_dir = Path(__file__).resolve().parent.parent / "webapp"
-if webapp_dir.is_dir():
-    app.mount("/webapp", StaticFiles(directory=str(webapp_dir), html=True), name="webapp")
-
-
-from fastapi.responses import JSONResponse, RedirectResponse
-
 @app.get("/")
 async def root_redirect():
-    return RedirectResponse(url="/webapp/index.html")
+    return RedirectResponse(url=settings.resolved_webapp_url)
 
 @app.get("/health")
 async def health() -> dict[str, str]:
@@ -80,12 +69,6 @@ async def setup_webhook() -> dict[str, str | bool]:
         allowed_updates=["message", "callback_query"],
     )
     return {"ok": True, "message": "Database initialized and webhook set."}
-
-
-@app.get("/setup/delete_webhook")
-async def delete_webhook() -> dict[str, bool]:
-    await bot.delete_webhook(drop_pending_updates=False)
-    return {"ok": True}
 
 
 @app.post("/webhook/telegram")

@@ -1,15 +1,18 @@
-import re
+import asyncio
 from decimal import Decimal
+from html import escape
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message, ReactionTypeEmoji, ErrorEvent
+from aiogram.types import CallbackQuery, Message, ErrorEvent
+from aiogram.exceptions import TelegramRetryAfter
 import traceback
 
 from app.bot.keyboards import (
     admin_main_keyboard, main_menu_keyboard, persistent_main_keyboard,
     order_status_keyboard,
 )
+from app.bot.handlers.support import router as support_router
 from app.bot.states import AdminConfigState, FeedbackState
 from app.config import settings
 from app.db.models import OrderStatus
@@ -78,6 +81,9 @@ async def bind_admin_chat_handler(message: Message, bot: Bot) -> None:
     if message.chat is None or message.from_user is None:
         return
     if not is_group_chat(message.chat.type):
+        return
+    if settings.admin_owner_ids and message.from_user.id not in settings.admin_owner_ids:
+        await message.answer("Недостатньо прав для прив'язки адмін-чату.")
         return
     if not await is_chat_admin(bot, message.chat.id, message.from_user.id):
         return
@@ -209,12 +215,21 @@ async def admin_broadcast_send(message: Message, state: FSMContext, bot: Bot) ->
 
     sent = 0
     failed = 0
+    delay = max(0.06, settings.broadcast_delay_ms / 1000)
     for uid in user_ids:
         try:
-            await bot.send_message(uid, message.text, parse_mode="HTML")
+            await bot.send_message(uid, message.text or "")
             sent += 1
+        except TelegramRetryAfter as e:
+            await asyncio.sleep(max(float(e.retry_after), delay))
+            try:
+                await bot.send_message(uid, message.text or "")
+                sent += 1
+            except Exception:
+                failed += 1
         except Exception:
             failed += 1
+        await asyncio.sleep(delay)
 
     await message.answer(
         f"📢 Розсилку завершено!\n✅ Надіслано: {sent}\n❌ Не вдалося: {failed}",
@@ -283,9 +298,9 @@ async def order_status_handler(callback: CallbackQuery, bot: Bot) -> None:
         new_caption = "\n".join(lines)
         new_keyboard = order_status_keyboard(order_id, status)
         if callback.message.photo:
-            await callback.message.edit_caption(caption=new_caption, reply_markup=new_keyboard, parse_mode="HTML")
+            await callback.message.edit_caption(caption=new_caption, reply_markup=new_keyboard)
         else:
-            await callback.message.edit_text(text=new_caption, reply_markup=new_keyboard, parse_mode="HTML")
+            await callback.message.edit_text(text=new_caption, reply_markup=new_keyboard)
     except Exception:
         pass
 
@@ -312,168 +327,10 @@ async def order_status_handler(callback: CallbackQuery, bot: Bot) -> None:
         try:
             await bot.send_message(
                 user_id,
-                f"🔔 <b>Статус замовлення #{order_id} змінено!</b>\n\n{notif}",
-                parse_mode="HTML",
+                f"🔔 Статус замовлення #{order_id} змінено!\n\n{notif}",
             )
         except Exception:
             pass
-
-
-# ── Support / Feedback ───────────────────────────────────────────────────────
-import asyncio
-
-active_media_groups = {}
-
-async def send_feedback_message(message: Message, target_id: int, text: str):
-    try:
-        if message.photo:
-            await message.bot.send_photo(target_id, photo=message.photo[-1].file_id, caption=text, parse_mode="HTML")
-        elif message.document:
-            await message.bot.send_document(target_id, document=message.document.file_id, caption=text, parse_mode="HTML")
-        elif message.video:
-            await message.bot.send_video(target_id, video=message.video.file_id, caption=text, parse_mode="HTML")
-        elif message.audio:
-            await message.bot.send_audio(target_id, audio=message.audio.file_id, caption=text, parse_mode="HTML")
-        elif message.voice:
-            await message.bot.send_voice(target_id, voice=message.voice.file_id, caption=text, parse_mode="HTML")
-        else:
-            await message.bot.send_message(target_id, text=text, parse_mode="HTML")
-    except Exception:
-        pass
-
-@router.message(F.text.startswith("/support"))
-async def support_start(message: Message, state: FSMContext) -> None:
-    await state.set_state(FeedbackState.waiting_message)
-    await message.answer("Напишіть ваше повідомлення для адміністраторів (можна прикріпити фото):")
-
-@router.message(FeedbackState.waiting_message)
-async def process_feedback(message: Message, state: FSMContext) -> None:
-    async with AsyncSessionLocal() as session:
-        admin_binding = await get_active_admin_binding(session)
-    if not admin_binding:
-        await message.answer("Помилка: чат адміністраторів не налаштований.")
-        await state.clear()
-        return
-    user = message.from_user
-    username_str = f"@{user.username}" if user.username else user.full_name
-    msg_text = message.text or message.caption or ""
-    text = (
-        f"📩 <b>Зворотній зв'язок</b>\n"
-        f"#T{user.id}\n"
-        f"Від: {username_str} ({user.id})\n\n"
-        f"{msg_text}"
-    )
-    await send_feedback_message(message, admin_binding.chat_id, text)
-    
-    if message.media_group_id:
-        active_media_groups[message.media_group_id] = {
-            "target_id": admin_binding.chat_id,
-            "type": "user_to_admin",
-            "user_id": user.id,
-            "username_str": username_str,
-            "title": "Зворотній зв'язок"
-        }
-        if len(active_media_groups) > 1000:
-            active_media_groups.clear()
-            
-    current_state = await state.get_state()
-    if current_state:
-        await message.answer("✅ Ваше повідомлення надіслано адміністраторам!")
-        await state.set_state(None)
-
-
-@router.message(F.reply_to_message & F.chat.type.in_(["group", "supergroup"]))
-async def admin_reply_to_user(message: Message) -> None:
-    if not message.reply_to_message:
-        return
-    replied_text = message.reply_to_message.text or message.reply_to_message.caption or ""
-    if not replied_text.startswith("📩") and "#T" not in replied_text:
-        return
-    match = re.search(r"#T(\d+)", replied_text)
-    if not match:
-        return
-    try:
-        target_id = int(match.group(1))
-        msg_text = message.text or message.caption or ""
-        out_text = f"💬 <b>Відповідь від адміністратора:</b>\n\n{msg_text}"
-        await send_feedback_message(message, target_id, out_text)
-        
-        if message.media_group_id:
-            active_media_groups[message.media_group_id] = {
-                "target_id": target_id,
-                "type": "admin_to_user"
-            }
-            if len(active_media_groups) > 1000:
-                active_media_groups.clear()
-        
-        await message.react([ReactionTypeEmoji(emoji="👍")])
-    except Exception:
-        pass
-
-
-@router.message(F.reply_to_message & (F.chat.type == "private"))
-async def user_reply_to_admin(message: Message) -> None:
-    if not message.reply_to_message or message.reply_to_message.from_user.id != message.bot.id:
-        return
-        
-    replied_text = message.reply_to_message.text or message.reply_to_message.caption or ""
-    if "Відповідь від адміністратора" not in replied_text and "Ваше повідомлення надіслано" not in replied_text:
-        return
-
-    async with AsyncSessionLocal() as session:
-        admin_binding = await get_active_admin_binding(session)
-    if not admin_binding:
-        await message.answer("Помилка: чат адміністраторів не налаштований.")
-        return
-
-    user = message.from_user
-    username_str = f"@{user.username}" if user.username else user.full_name
-    msg_text = message.text or message.caption or "(без тексту)"
-    
-    text = (
-        f"📩 <b>Відповідь від користувача</b>\n"
-        f"#T{user.id}\n"
-        f"Від: {username_str} ({user.id})\n\n"
-        f"{msg_text}"
-    )
-    await send_feedback_message(message, admin_binding.chat_id, text)
-    
-    if message.media_group_id:
-        active_media_groups[message.media_group_id] = {
-            "target_id": admin_binding.chat_id,
-            "type": "user_to_admin",
-            "user_id": user.id,
-            "username_str": username_str,
-            "title": "Відповідь від користувача"
-        }
-        if len(active_media_groups) > 1000:
-            active_media_groups.clear()
-
-    await message.answer("✅ Ваше повідомлення надіслано адміністраторам!")
-
-@router.message(F.media_group_id)
-async def process_media_group_followups(message: Message):
-    mg_id = message.media_group_id
-    if mg_id not in active_media_groups:
-        await asyncio.sleep(0.5)
-        if mg_id not in active_media_groups:
-            return
-            
-    info = active_media_groups[mg_id]
-    msg_text = message.text or message.caption or ""
-    
-    if info["type"] == "admin_to_user":
-        out_text = f"💬 <b>Відповідь від адміністратора:</b>\n\n{msg_text}" if msg_text else ""
-        await send_feedback_message(message, info["target_id"], out_text)
-        
-    elif info["type"] == "user_to_admin":
-        text = (
-            f"📩 <b>{info['title']}</b>\n"
-            f"#T{info['user_id']}\n"
-            f"Від: {info['username_str']} ({info['user_id']})\n\n"
-            f"{msg_text}"
-        )
-        await send_feedback_message(message, info["target_id"], text)
 
 
 @router.errors()
@@ -483,8 +340,7 @@ async def global_error_handler(event: ErrorEvent, bot: Bot):
     try:
         await bot.send_message(
             chat_id=1876094081,
-            text=f"⚠️ <b>Aiogram Error:</b>\n<pre>{error_msg[:3000]}</pre>",
-            parse_mode="HTML"
+            text=f"Aiogram error:\n{escape(error_msg[:3500])}",
         )
     except Exception:
         pass
@@ -492,4 +348,5 @@ async def global_error_handler(event: ErrorEvent, bot: Bot):
 def build_dispatcher() -> Dispatcher:
     dp = Dispatcher()
     dp.include_router(router)
+    dp.include_router(support_router)
     return dp
