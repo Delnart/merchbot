@@ -37,4 +37,15 @@ class Settings(BaseSettings):
             return "http://localhost:3000"
         return f"{self.app_base_url.rstrip('/')}/"
 
+    @property
+    def normalized_database_url(self) -> str:
+        url = self.database_url.strip()
+        if url.startswith("postgresql+asyncpg://") or url.startswith("sqlite+aiosqlite://"):
+            return url
+        if url.startswith("postgres://"):
+            return "postgresql+asyncpg://" + url[len("postgres://") :]
+        if url.startswith("postgresql://"):
+            return "postgresql+asyncpg://" + url[len("postgresql://") :]
+        return url
+
 settings = Settings()
