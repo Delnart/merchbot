@@ -9,6 +9,22 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
+      - key: BOT_TOKEN
+        sync: false
+      - key: WEBHOOK_SECRET
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+      - key: WEBAPP_URL
+        sync: false
+      - key: ADMIN_DEFAULT_CURRENCY
+        value: UAH
+      - key: ADMIN_OWNER_IDS
+        sync: false
+      - key: BROADCAST_DELAY_MS
+        value: 100
 
   - type: web
     name: merchfice-frontend

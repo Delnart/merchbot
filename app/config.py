@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import Field, Json
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -55,13 +57,26 @@ class Settings(BaseSettings):
 
         parsed = urlparse(normalized)
         query = dict(parse_qsl(parsed.query, keep_blank_values=True))
-        sslmode = query.pop("sslmode", "").lower()
-        if sslmode:
-            if sslmode in {"require", "verify-ca", "verify-full"}:
-                query.setdefault("ssl", "require")
-            elif sslmode == "disable":
-                query.setdefault("ssl", "false")
+
+        # asyncpg accepts SSL better through connect_args than DSN params
+        query.pop("sslmode", None)
+        query.pop("ssl", None)
 
         return urlunparse(parsed._replace(query=urlencode(query)))
+
+    @property
+    def database_connect_args(self) -> dict[str, Any]:
+        url = self.database_url.strip()
+        parsed = urlparse(url)
+        query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+
+        sslmode = query.get("sslmode", "").lower()
+        ssl_value = query.get("ssl", "").lower()
+
+        if sslmode in {"require", "verify-ca", "verify-full"} or ssl_value in {"require", "true", "1"}:
+            return {"ssl": "require"}
+        if sslmode == "disable" or ssl_value in {"disable", "false", "0"}:
+            return {"ssl": False}
+        return {}
 
 settings = Settings()
