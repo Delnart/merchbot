@@ -58,7 +58,8 @@ async def start_handler(message: Message, state: FSMContext) -> None:
     if not active_products:
         await message.answer(
             "Предзамовлення недоступне.\n💬 Для зв'язку з адміністрацією або залишення зворотного зв'язку, натисніть кнопку «Підтримка» нижче "
-            "або використовуйте команду /support."
+            "або використовуйте команду /support.",
+            reply_markup=main_menu_keyboard(),
         )
     else:
         await message.answer(
