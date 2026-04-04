@@ -10,6 +10,14 @@ type TelegramWindow = Window & {
   };
 };
 
+function readInitDataFromHash(): string {
+  if (typeof window === "undefined") return "";
+  const rawHash = window.location.hash?.replace(/^#/, "") ?? "";
+  if (!rawHash) return "";
+  const params = new URLSearchParams(rawHash);
+  return params.get("tgWebAppData") ?? "";
+}
+
 export function getTelegramWebApp(): TelegramWebApp | null {
   if (typeof window === "undefined") return null;
   const w = window as TelegramWindow;
@@ -17,7 +25,9 @@ export function getTelegramWebApp(): TelegramWebApp | null {
 }
 
 export function getTelegramInitData(): string {
-  return getTelegramWebApp()?.initData ?? "";
+  const fromWebApp = getTelegramWebApp()?.initData ?? "";
+  if (fromWebApp) return fromWebApp;
+  return readInitDataFromHash();
 }
 
 export function isOpenedInTelegram(): boolean {
