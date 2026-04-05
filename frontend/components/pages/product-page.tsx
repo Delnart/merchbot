@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import type { CatalogProduct } from '@/lib/api';
 import { resolveMediaUrl } from '@/lib/api';
@@ -17,13 +17,12 @@ export default function ProductPage({ product, loading, onAddToCart }: ProductPa
   const [selectedColor, setSelectedColor] = useState<'Білий' | 'Чорний'>('Білий');
   const [adding, setAdding] = useState(false);
 
-  // Reset on product change
-  const [prevId, setPrevId] = useState<number | null>(null);
-  if (product && product.id !== prevId) {
-    setPrevId(product.id);
-    setSelectedSize(product.sizes[0]?.size ?? '');
-    setSelectedColor('Білий');
-  }
+  useEffect(() => {
+    if (product) {
+      setSelectedSize(product.sizes[0]?.size ?? '');
+      setSelectedColor('Білий');
+    }
+  }, [product?.id]);
 
   if (loading) return <Spinner />;
   if (!product) return null;

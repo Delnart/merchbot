@@ -518,15 +518,16 @@ export default function MiniAppShell() {
           cartCount={cartCount}
           isAdmin={isAdmin}
           onNavigate={p => {
-            if (p === 'settings') {
-              void loadSettings();
-            }
-            if (p === 'admin') {
-              void loadAdmin();
-            }
-            setPage(p);
-            window.scrollTo(0, 0);
-          }}
+              if (p === 'settings') void loadSettings();
+              if (p === 'admin') void loadAdmin();
+              if (p === 'cart') void reloadCart();     // ← додати
+              if (p === 'catalog' && products.length === 0) {
+                setCatalogLoading(true);
+                api.getCatalog().then(d => setProducts(d.products)).finally(() => setCatalogLoading(false));
+              }
+              setPage(p);
+              window.scrollTo(0, 0);
+            }}
         />
       )}
 

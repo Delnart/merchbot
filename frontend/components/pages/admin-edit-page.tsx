@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CatalogProduct } from '@/lib/api';
 import { resolveMediaUrl } from '@/lib/api';
 
@@ -25,7 +25,9 @@ export default function AdminEditPage({ product, onSave }: AdminEditPageProps) {
   const [requiresColor, setRequiresColor] = useState(product?.requires_color ?? false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoBlackFile, setPhotoBlackFile] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(resolveMediaUrl(product?.photo_url));
+  const [photoPreview, setPhotoPreview] = useState<string | null>(
+    resolveMediaUrl(product?.photo_url),
+  );
   const [photoBlackPreview, setPhotoBlackPreview] = useState<string | null>(
     resolveMediaUrl(product?.photo_black_url),
   );
@@ -34,19 +36,18 @@ export default function AdminEditPage({ product, onSave }: AdminEditPageProps) {
   const photoRef = useRef<HTMLInputElement>(null);
   const photoBlackRef = useRef<HTMLInputElement>(null);
 
-  // Track product change
-  const [prevId, setPrevId] = useState(product?.id ?? null);
-  if (product?.id !== prevId) {
-    setPrevId(product?.id ?? null);
+  useEffect(() => {
     setTitle(product?.title ?? '');
     setDescription(product?.description ?? '');
-    setSizesRaw(product ? product.sizes.map(s => `${s.size}:${s.price}`).join(', ') : '');
+    setSizesRaw(
+      product ? product.sizes.map(s => `${s.size}:${s.price}`).join(', ') : '',
+    );
     setRequiresColor(product?.requires_color ?? false);
     setPhotoFile(null);
     setPhotoBlackFile(null);
     setPhotoPreview(resolveMediaUrl(product?.photo_url));
     setPhotoBlackPreview(resolveMediaUrl(product?.photo_black_url));
-  }
+  }, [product?.id]);
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>, isBlack: boolean) => {
     const file = e.target.files?.[0];
@@ -115,11 +116,13 @@ export default function AdminEditPage({ product, onSave }: AdminEditPageProps) {
         <span className="checkbox-label">Товар має опцію кольору (Білий/Чорний)</span>
       </label>
 
-      {/* Photo white */}
       <p className="section-title" style={{ marginTop: 0 }}>
         {requiresColor ? 'Фото товару (Білий)' : 'Фото товару'}
       </p>
-      <div className={`file-upload-area ${photoFile || product?.photo_url ? 'has-file' : ''}`} style={{ marginBottom: 16 }}>
+      <div
+        className={`file-upload-area ${photoFile || product?.photo_url ? 'has-file' : ''}`}
+        style={{ marginBottom: 16 }}
+      >
         <input
           ref={photoRef}
           type="file"
@@ -129,7 +132,6 @@ export default function AdminEditPage({ product, onSave }: AdminEditPageProps) {
         />
         {photoPreview ? (
           <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={photoPreview} className="file-upload-preview" alt="Фото" />
             <div className="file-upload-text" style={{ marginTop: 8 }}>
               Натисніть, щоб змінити
@@ -143,7 +145,6 @@ export default function AdminEditPage({ product, onSave }: AdminEditPageProps) {
         )}
       </div>
 
-      {/* Photo black */}
       {requiresColor && (
         <>
           <p className="section-title">Фото товару (Чорний)</p>
@@ -160,7 +161,6 @@ export default function AdminEditPage({ product, onSave }: AdminEditPageProps) {
             />
             {photoBlackPreview ? (
               <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={photoBlackPreview} className="file-upload-preview" alt="Фото чорний" />
                 <div className="file-upload-text" style={{ marginTop: 8 }}>
                   Натисніть, щоб змінити
