@@ -1,11 +1,13 @@
-"""REST API endpoints for the Telegram Mini App."""
-
+import asyncio
 import io
+import imghdr
+import time
+from collections import defaultdict, deque
 from decimal import Decimal
 
 import aiohttp
 import re
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Header, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Header, Request, UploadFile
 from pydantic import BaseModel, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +30,30 @@ from app.services.orders import create_order_from_cart, set_order_admin_message
 from app.services.telegram_auth import validate_init_data
 
 router = APIRouter(prefix="/api")
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+ALLOWED_IMAGE_TYPES = {"jpeg", "png", "gif", "webp"}
+CHECKOUT_RATE_LIMIT = 5
+CHECKOUT_RATE_WINDOW_SECONDS = 60
+_checkout_hits: dict[str, deque[float]] = defaultdict(deque)
+_checkout_rate_lock = asyncio.Lock()
+
+
+def _checkout_rate_key(request: Request, telegram_id: int) -> str:
+    client_host = request.client.host if request.client else "unknown"
+    return f"{telegram_id}:{client_host}"
+
+
+async def _enforce_checkout_rate_limit(request: Request, telegram_id: int) -> None:
+    now = time.monotonic()
+    key = _checkout_rate_key(request, telegram_id)
+    async with _checkout_rate_lock:
+        bucket = _checkout_hits[key]
+        while bucket and now - bucket[0] > CHECKOUT_RATE_WINDOW_SECONDS:
+            bucket.popleft()
+        if len(bucket) >= CHECKOUT_RATE_LIMIT:
+            raise HTTPException(status_code=429, detail="too_many_requests")
+        bucket.append(now)
 
 
 # ── Auth dependency ──────────────────────────────────────────────────────────
@@ -394,6 +420,7 @@ def _delivery_label(method: str) -> str:
 
 @router.post("/checkout")
 async def api_checkout(
+    request: Request,
     delivery_method: str = Form(...),
     delivery_address: str = Form(""),
     recipient_id: int | None = Form(None),
@@ -404,6 +431,8 @@ async def api_checkout(
     telegram_id: int = Depends(get_telegram_id),
 ):
     """Process checkout with receipt photo upload."""
+    await _enforce_checkout_rate_limit(request, telegram_id)
+
     # Validate delivery method
     try:
         method_enum = DeliveryMethod(delivery_method)
@@ -443,6 +472,8 @@ async def api_checkout(
 
     # Upload receipt photo via Telegram Bot API to get file_id
     photo_bytes = await receipt_photo.read()
+    if len(photo_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="file_too_large")
     receipt_file_id = await _upload_photo_to_telegram(telegram_id, photo_bytes)
 
     # Build address
@@ -518,6 +549,13 @@ async def _upload_photo_to_telegram(chat_id: int, photo_bytes: bytes) -> str:
     """Send photo to the admin chat to get a file_id, then delete the message."""
     from app.main import bot
     from aiogram.types import BufferedInputFile
+
+    if len(photo_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="file_too_large")
+
+    img_type = imghdr.what(None, h=photo_bytes[:32])
+    if img_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="invalid_file_type")
 
     photo_bytes = resize_image_for_telegram(photo_bytes)
     input_file = BufferedInputFile(photo_bytes, filename="receipt.jpg")
@@ -787,9 +825,9 @@ async def api_admin_product_toggle(product_id: int, admin_id: int = Depends(requ
             product = await get_product(session, product_id)
             if not product:
                 raise HTTPException(status_code=404, detail="product_not_found")
-            await archive_product(session, product, not product.is_active)
-            new_status = not product.is_active
-    return {"ok": True, "is_active": new_status}
+            new_active = not product.is_active
+            await archive_product(session, product, new_active)
+    return {"ok": True, "is_active": new_active}
 
 
 @router.get("/admin/check")

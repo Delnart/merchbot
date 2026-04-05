@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     admin_default_currency: str = Field(default="UAH", validation_alias="ADMIN_DEFAULT_CURRENCY")
     admin_owner_ids_raw: str = Field(default="", validation_alias="ADMIN_OWNER_IDS")
     broadcast_delay_ms: int = Field(default=100, validation_alias="BROADCAST_DELAY_MS")
+    error_report_chat_id: int | None = Field(default=None, validation_alias="ERROR_REPORT_CHAT_ID")
     
     google_creds_json: Json | None = Field(default=None, validation_alias="GOOGLE_CREDS_JSON")
     google_sheets_id: str = Field(default="", validation_alias="GOOGLE_SHEETS_ID")

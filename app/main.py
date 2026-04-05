@@ -32,18 +32,25 @@ app = FastAPI(lifespan=lifespan)
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     error_msg = "".join(traceback.format_exception(exc))
-    try:
-        await bot.send_message(
-            chat_id=1876094081,
-            text=f"FastAPI error:\n{escape(error_msg[:3500])}",
-        )
-    except Exception:
-        pass
+    if settings.error_report_chat_id:
+        try:
+            await bot.send_message(
+                chat_id=settings.error_report_chat_id,
+                text=f"FastAPI error:\n{escape(error_msg[:3500])}",
+            )
+        except Exception:
+            pass
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+CORS_ORIGINS = [
+    "https://web.telegram.org",
+    settings.app_base_url,
+    settings.webapp_url,
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[origin for origin in CORS_ORIGINS if origin],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

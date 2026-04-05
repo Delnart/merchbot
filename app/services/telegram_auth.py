@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, unquote
 from app.config import settings
 
 
-def validate_init_data(init_data: str, *, max_age_seconds: int = 86400) -> dict | None:
+def validate_init_data(init_data: str, *, max_age_seconds: int = 3600) -> dict | None:
     """Validate Telegram WebApp initData string.
 
     Returns parsed user dict on success, None if invalid.

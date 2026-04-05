@@ -13,9 +13,12 @@ async def ensure_user(session: AsyncSession, telegram_id: int, username: str | N
         user = UserProfile(telegram_id=telegram_id, username=username, first_name=first_name, last_name=last_name)
         session.add(user)
     else:
-        user.username = username
-        user.first_name = first_name
-        user.last_name = last_name
+        if username is not None:
+            user.username = username
+        if first_name is not None:
+            user.first_name = first_name
+        if last_name is not None:
+            user.last_name = last_name
     await session.flush()
     return user
 

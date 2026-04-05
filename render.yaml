@@ -18,7 +18,7 @@ services:
       - key: APP_BASE_URL
         sync: false
       - key: WEBAPP_URL
-        sync: false
+        sync: false 
       - key: ADMIN_DEFAULT_CURRENCY
         value: UAH
       - key: ADMIN_OWNER_IDS

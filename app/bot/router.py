@@ -338,13 +338,14 @@ async def order_status_handler(callback: CallbackQuery, bot: Bot) -> None:
 async def global_error_handler(event: ErrorEvent, bot: Bot):
     exc = event.exception
     error_msg = "".join(traceback.format_exception(exc))
-    try:
-        await bot.send_message(
-            chat_id=1876094081,
-            text=f"Aiogram error:\n{escape(error_msg[:3500])}",
-        )
-    except Exception:
-        pass
+    if settings.error_report_chat_id:
+        try:
+            await bot.send_message(
+                chat_id=settings.error_report_chat_id,
+                text=f"Aiogram error:\n{escape(error_msg[:3500])}",
+            )
+        except Exception:
+            pass
 
 def build_dispatcher() -> Dispatcher:
     dp = Dispatcher()

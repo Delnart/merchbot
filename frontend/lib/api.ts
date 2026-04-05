@@ -1,3 +1,5 @@
+// ── Types ─────────────────────────────────────────────────────────────────
+
 export type CatalogSize = {
   size: string;
   price: number;
@@ -41,7 +43,7 @@ export type Recipient = {
 
 export type Order = {
   id: number;
-  status: string;
+  status: 'pending' | 'in_process' | 'completed' | 'cancelled';
   total_amount: number;
   created_at: string;
   delivery_method: string | null;
@@ -55,26 +57,41 @@ export type ShopConfig = {
   is_dayf_delivery_enabled: boolean;
 };
 
+// ── API Client ────────────────────────────────────────────────────────────
+
+class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 class ApiClient {
-  private readonly baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+  private readonly baseUrl: string;
   private readonly initData: string;
 
   constructor(initData: string) {
+    this.baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
     this.initData = initData;
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const headers = new Headers(init?.headers ?? {});
-    headers.set("X-Telegram-Init-Data", this.initData);
+    if (this.initData) {
+      headers.set('X-Telegram-Init-Data', this.initData);
+    }
 
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...init,
       headers,
-      cache: "no-store",
+      cache: 'no-store',
     });
 
     if (response.status === 401) {
-      throw new Error("open_via_telegram_required");
+      throw new ApiError('open_via_telegram_required', 401);
     }
     if (!response.ok) {
       let detail = `http_${response.status}`;
@@ -82,120 +99,148 @@ class ApiClient {
         const payload = (await response.json()) as { detail?: string };
         if (payload.detail) detail = payload.detail;
       } catch {
-        // ignore parse errors
+        // ignore
       }
-      throw new Error(detail);
+      throw new ApiError(detail, response.status);
     }
 
     const text = await response.text();
     return (text ? JSON.parse(text) : {}) as T;
   }
 
+  // ── Catalog ──────────────────────────────────────────────────────────────
   getCatalog(): Promise<{ products: CatalogProduct[] }> {
-    return this.request("/api/catalog");
+    return this.request('/api/catalog');
   }
 
   getProduct(productId: number): Promise<CatalogProduct> {
     return this.request(`/api/catalog/${productId}`);
   }
 
-  getCart(): Promise<CartResponse> {
-    return this.request("/api/cart");
+  getConfig(): Promise<ShopConfig> {
+    return this.request('/api/config');
   }
 
-  addToCart(productId: number, size: string, color?: string): Promise<{ ok: boolean }> {
-    return this.request("/api/cart", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ product_id: productId, size, color: color ?? null, quantity: 1 }),
+  // ── Cart ─────────────────────────────────────────────────────────────────
+  getCart(): Promise<CartResponse> {
+    return this.request('/api/cart');
+  }
+
+  addToCart(productId: number, size: string, color?: string | null, quantity = 1): Promise<{ ok: boolean }> {
+    return this.request('/api/cart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product_id: productId, size, color: color ?? null, quantity }),
     });
   }
 
   updateCartItem(itemId: number, quantity: number): Promise<{ ok: boolean }> {
     return this.request(`/api/cart/${itemId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ quantity }),
     });
   }
 
   removeCartItem(itemId: number): Promise<{ ok: boolean }> {
-    return this.request(`/api/cart/${itemId}`, { method: "DELETE" });
+    return this.request(`/api/cart/${itemId}`, { method: 'DELETE' });
   }
 
   clearCart(): Promise<{ ok: boolean }> {
-    return this.request("/api/cart", { method: "DELETE" });
+    return this.request('/api/cart', { method: 'DELETE' });
   }
 
+  // ── Recipients ────────────────────────────────────────────────────────────
   getRecipients(): Promise<{ recipients: Recipient[] }> {
-    return this.request("/api/recipients");
+    return this.request('/api/recipients');
   }
 
-  createRecipient(payload: { full_name: string; phone: string; is_default?: boolean }): Promise<{ id: number; ok: boolean }> {
-    return this.request("/api/recipients", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+  createRecipient(data: {
+    full_name: string;
+    phone: string;
+    is_default?: boolean;
+  }): Promise<{ id: number; ok: boolean }> {
+    return this.request('/api/recipients', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
     });
   }
 
-  setDefaultRecipient(recipientId: number): Promise<{ ok: boolean }> {
-    return this.request(`/api/recipients/${recipientId}/set-default`, { method: "POST" });
+  setDefaultRecipient(id: number): Promise<{ ok: boolean }> {
+    return this.request(`/api/recipients/${id}/set-default`, { method: 'POST' });
   }
 
-  deleteRecipient(recipientId: number): Promise<{ ok: boolean }> {
-    return this.request(`/api/recipients/${recipientId}`, { method: "DELETE" });
+  deleteRecipient(id: number): Promise<{ ok: boolean }> {
+    return this.request(`/api/recipients/${id}`, { method: 'DELETE' });
   }
 
+  // ── Orders ────────────────────────────────────────────────────────────────
   getOrders(): Promise<{ orders: Order[] }> {
-    return this.request("/api/orders");
+    return this.request('/api/orders');
   }
 
-  getConfig(): Promise<ShopConfig> {
-    return this.request("/api/config");
-  }
-
+  // ── Checkout ──────────────────────────────────────────────────────────────
   checkout(formData: FormData): Promise<{ ok: boolean; order_id: number }> {
-    return this.request("/api/checkout", { method: "POST", body: formData });
+    return this.request('/api/checkout', { method: 'POST', body: formData });
   }
 
+  // ── Admin ─────────────────────────────────────────────────────────────────
   checkAdmin(): Promise<{ is_admin: boolean }> {
-    return this.request("/api/admin/check");
+    return this.request('/api/admin/check');
   }
 
   getAdminProducts(): Promise<{ products: CatalogProduct[] }> {
-    return this.request("/api/admin/products");
+    return this.request('/api/admin/products');
   }
 
-  createProduct(payload: { title: string; description: string; requires_color: boolean; sizes: Record<string, number> }): Promise<{ id: number; ok: boolean }> {
-    return this.request("/api/admin/products", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+  createProduct(data: {
+    title: string;
+    description: string;
+    requires_color: boolean;
+    sizes: Record<string, number>;
+  }): Promise<{ id: number; ok: boolean }> {
+    return this.request('/api/admin/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
     });
   }
 
-  updateProduct(productId: number, payload: { title: string; description: string; requires_color: boolean; sizes: Record<string, number> }): Promise<{ ok: boolean }> {
-    return this.request(`/api/admin/products/${productId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+  updateProduct(
+    id: number,
+    data: {
+      title: string;
+      description: string;
+      requires_color: boolean;
+      sizes: Record<string, number>;
+    },
+  ): Promise<{ ok: boolean }> {
+    return this.request(`/api/admin/products/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
     });
   }
 
-  uploadProductPhoto(productId: number, formData: FormData): Promise<{ ok: boolean; photo_url: string }> {
-    return this.request(`/api/admin/products/${productId}/photo`, { method: "POST", body: formData });
+  uploadProductPhoto(id: number, formData: FormData): Promise<{ ok: boolean; photo_url: string }> {
+    return this.request(`/api/admin/products/${id}/photo`, { method: 'POST', body: formData });
   }
 
-  uploadProductBlackPhoto(productId: number, formData: FormData): Promise<{ ok: boolean; photo_black_url: string }> {
-    return this.request(`/api/admin/products/${productId}/photo_black`, { method: "POST", body: formData });
+  uploadProductBlackPhoto(
+    id: number,
+    formData: FormData,
+  ): Promise<{ ok: boolean; photo_black_url: string }> {
+    return this.request(`/api/admin/products/${id}/photo_black`, { method: 'POST', body: formData });
   }
 
-  toggleProduct(productId: number): Promise<{ ok: boolean; is_active: boolean }> {
-    return this.request(`/api/admin/products/${productId}/toggle`, { method: "POST" });
+  toggleProduct(id: number): Promise<{ ok: boolean; is_active: boolean }> {
+    return this.request(`/api/admin/products/${id}/toggle`, { method: 'POST' });
   }
 }
 
 export function buildApiClient(initData: string): ApiClient {
   return new ApiClient(initData);
 }
+
+export type { ApiClient };

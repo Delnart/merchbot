@@ -1,14 +1,21 @@
-type SuccessPageProps = {
+interface SuccessPageProps {
   orderId: number | null;
-  onBackCatalog: () => void;
-};
+  onBack: () => void;
+}
 
-export default function SuccessPage({ orderId, onBackCatalog }: SuccessPageProps) {
+export default function SuccessPage({ orderId, onBack }: SuccessPageProps) {
   return (
-    <div className="stack centered">
-      <h2>Замовлення #{orderId} оформлено</h2>
-      <p>Ми перевіримо оплату та повідомимо вас у боті.</p>
-      <button className="mainBtn" onClick={onBackCatalog}>До каталогу</button>
+    <div className="success-page">
+      <div className="success-icon">✓</div>
+      <div className="success-title">Замовлення оформлено</div>
+      <div className="success-text">
+        {orderId
+          ? `Замовлення #${orderId} прийнято. Ми перевіримо оплату та повідомимо вас у боті.`
+          : 'Ваше замовлення прийнято. Ми перевіримо оплату та повідомимо вас.'}
+      </div>
+      <button className="btn-primary" onClick={onBack} type="button" style={{ maxWidth: 280, margin: '0 auto' }}>
+        Повернутись до каталогу
+      </button>
     </div>
   );
 }

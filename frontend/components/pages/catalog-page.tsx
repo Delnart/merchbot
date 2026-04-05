@@ -1,31 +1,55 @@
-import Image from "next/image";
+'use client';
 
-import type { CatalogProduct } from "@/lib/api";
+import Image from 'next/image';
+import type { CatalogProduct } from '@/lib/api';
+import Spinner from '@/components/ui/spinner';
 
-type CatalogPageProps = {
+interface CatalogPageProps {
   products: CatalogProduct[];
-  onOpenProduct: (productId: number) => void;
-};
+  loading: boolean;
+  onOpenProduct: (id: number) => void;
+}
 
-export default function CatalogPage({ products, onOpenProduct }: CatalogPageProps) {
+export default function CatalogPage({ products, loading, onOpenProduct }: CatalogPageProps) {
+  if (loading) return <Spinner />;
+
+  if (!products.length) {
+    return (
+      <div className="empty-state">
+        <div className="empty-icon">—</div>
+        <div className="empty-text">Предзамовлення недоступне</div>
+      </div>
+    );
+  }
+
   return (
-    <div className="catalogGrid">
-      {products.map((product) => (
-        <article className="productCard" key={product.id} onClick={() => onOpenProduct(product.id)}>
-          {product.photo_url ? (
-            <div className="productImageWrap">
-              <Image className="productImage" src={product.photo_url} alt={product.title} fill unoptimized sizes="(max-width: 768px) 50vw, 240px" />
-            </div>
-          ) : (
-            <div className="productImageWrap">
-              <div className="productImageFallback">Без фото</div>
-            </div>
-          )}
-          <h2>{product.title}</h2>
-          <p>{product.description}</p>
-          <div className="priceRow">
-            <span>від {product.min_price} грн</span>
-            <span>{product.sizes.map((size) => size.size).join(" · ")}</span>
+    <div className="product-grid">
+      {products.map(p => (
+        <article
+          key={p.id}
+          className="card product-card"
+          onClick={() => onOpenProduct(p.id)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={e => e.key === 'Enter' && onOpenProduct(p.id)}
+        >
+          <div className="product-image-wrap">
+            {p.photo_url ? (
+              <Image
+                src={p.photo_url}
+                alt={p.title}
+                fill
+                unoptimized
+                sizes="(max-width: 640px) 50vw, 240px"
+                style={{ objectFit: 'cover' }}
+              />
+            ) : (
+              <div className="product-image-placeholder">Фото</div>
+            )}
+          </div>
+          <div className="product-info">
+            <div className="product-title">{p.title}</div>
+            <div className="product-price">від {p.min_price} грн</div>
           </div>
         </article>
       ))}
