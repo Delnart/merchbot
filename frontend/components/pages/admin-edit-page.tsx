@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import type { CatalogProduct } from '@/lib/api';
+import { resolveMediaUrl } from '@/lib/api';
 
 interface AdminEditPageProps {
   product: CatalogProduct | null;
@@ -24,9 +25,9 @@ export default function AdminEditPage({ product, onSave }: AdminEditPageProps) {
   const [requiresColor, setRequiresColor] = useState(product?.requires_color ?? false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoBlackFile, setPhotoBlackFile] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(product?.photo_url ?? null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(resolveMediaUrl(product?.photo_url));
   const [photoBlackPreview, setPhotoBlackPreview] = useState<string | null>(
-    product?.photo_black_url ?? null,
+    resolveMediaUrl(product?.photo_black_url),
   );
   const [saving, setSaving] = useState(false);
 
@@ -43,8 +44,8 @@ export default function AdminEditPage({ product, onSave }: AdminEditPageProps) {
     setRequiresColor(product?.requires_color ?? false);
     setPhotoFile(null);
     setPhotoBlackFile(null);
-    setPhotoPreview(product?.photo_url ?? null);
-    setPhotoBlackPreview(product?.photo_black_url ?? null);
+    setPhotoPreview(resolveMediaUrl(product?.photo_url));
+    setPhotoBlackPreview(resolveMediaUrl(product?.photo_black_url));
   }
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>, isBlack: boolean) => {

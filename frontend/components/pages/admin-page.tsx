@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import type { CatalogProduct } from '@/lib/api';
+import { resolveMediaUrl } from '@/lib/api';
 import Spinner from '@/components/ui/spinner';
 
 interface AdminPageProps {
@@ -27,14 +28,16 @@ export default function AdminPage({ products, loading, onCreate, onEdit, onToggl
         </div>
       ) : (
         <div className="card">
-          {products.map((p, idx) => (
+          {products.map((p, idx) => {
+            const photoUrl = resolveMediaUrl(p.photo_url);
+            return (
             <div key={p.id}>
               {idx > 0 && <div className="divider" />}
               <div className="admin-product-item" onClick={() => onEdit(p)}>
                 <div className="admin-product-image">
-                  {p.photo_url ? (
+                  {photoUrl ? (
                     <Image
-                      src={p.photo_url}
+                      src={photoUrl}
                       alt={p.title}
                       fill
                       unoptimized
@@ -72,7 +75,8 @@ export default function AdminPage({ products, loading, onCreate, onEdit, onToggl
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </>

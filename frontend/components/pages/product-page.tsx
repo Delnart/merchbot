@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import type { CatalogProduct } from '@/lib/api';
+import { resolveMediaUrl } from '@/lib/api';
 import Spinner from '@/components/ui/spinner';
 
 interface ProductPageProps {
@@ -31,6 +32,7 @@ export default function ProductPage({ product, loading, onAddToCart }: ProductPa
     selectedColor === 'Чорний' && product.photo_black_url
       ? product.photo_black_url
       : product.photo_url;
+  const resolvedPhotoUrl = resolveMediaUrl(photoUrl);
 
   const handleAdd = async () => {
     if (!selectedSize) return;
@@ -44,10 +46,10 @@ export default function ProductPage({ product, loading, onAddToCart }: ProductPa
 
   return (
     <div className="page-enter">
-      {photoUrl && (
+      {resolvedPhotoUrl && (
         <div className="product-detail-image-wrap">
           <Image
-            src={photoUrl}
+            src={resolvedPhotoUrl}
             alt={product.title}
             fill
             unoptimized

@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import type { CatalogProduct } from '@/lib/api';
+import { resolveMediaUrl } from '@/lib/api';
 import Spinner from '@/components/ui/spinner';
 
 interface CatalogPageProps {
@@ -24,7 +25,9 @@ export default function CatalogPage({ products, loading, onOpenProduct }: Catalo
 
   return (
     <div className="product-grid">
-      {products.map(p => (
+      {products.map(p => {
+        const photoUrl = resolveMediaUrl(p.photo_url);
+        return (
         <article
           key={p.id}
           className="card product-card"
@@ -34,9 +37,9 @@ export default function CatalogPage({ products, loading, onOpenProduct }: Catalo
           onKeyDown={e => e.key === 'Enter' && onOpenProduct(p.id)}
         >
           <div className="product-image-wrap">
-            {p.photo_url ? (
+            {photoUrl ? (
               <Image
-                src={p.photo_url}
+                src={photoUrl}
                 alt={p.title}
                 fill
                 unoptimized
@@ -52,7 +55,8 @@ export default function CatalogPage({ products, loading, onOpenProduct }: Catalo
             <div className="product-price">від {p.min_price} грн</div>
           </div>
         </article>
-      ))}
+        );
+      })}
     </div>
   );
 }

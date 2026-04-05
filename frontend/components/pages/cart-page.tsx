@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import type { CartResponse } from '@/lib/api';
+import { resolveMediaUrl } from '@/lib/api';
 import Spinner from '@/components/ui/spinner';
 
 interface CartPageProps {
@@ -37,14 +38,16 @@ export default function CartPage({ cart, loading, onUpdateQty, onClear, onChecko
   return (
     <>
       <div className="card" style={{ marginBottom: 12 }}>
-        {cart.items.map((item, idx) => (
+        {cart.items.map((item, idx) => {
+          const photoUrl = resolveMediaUrl(item.photo_url);
+          return (
           <div key={item.id}>
             {idx > 0 && <div className="divider" />}
             <div className="cart-item">
               <div className="cart-item-image-wrap">
-                {item.photo_url ? (
+                {photoUrl ? (
                   <Image
-                    src={item.photo_url}
+                    src={photoUrl}
                     alt={item.title}
                     fill
                     unoptimized
@@ -98,7 +101,8 @@ export default function CartPage({ cart, loading, onUpdateQty, onClear, onChecko
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
 
         <div className="cart-total">
           <span>Разом</span>
