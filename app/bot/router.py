@@ -199,19 +199,30 @@ async def admin_broadcast_handler(callback: CallbackQuery, state: FSMContext, bo
         return
     await state.set_state(AdminConfigState.waiting_broadcast_message)
     await callback.message.edit_text(
-        "📢 Введіть текст розсилки.\n\nПовідомлення буде надіслано всім користувачам, які запускали бота."
+        "📢 Введіть текст або надішліть фото з підписом для розсилки.\n\n"
+        "Повідомлення буде надіслано користувачам, які мають хоча б одне незасковане замовлення."
     )
     await callback.answer()
+
+
+async def _send_broadcast_message(bot: Bot, uid: int, message: Message) -> None:
+    if message.photo:
+        await bot.send_photo(uid, message.photo[-1].file_id, caption=message.caption or "")
+    else:
+        await bot.send_message(uid, message.text or "")
 
 
 @router.message(AdminConfigState.waiting_broadcast_message)
 async def admin_broadcast_send(message: Message, state: FSMContext, bot: Bot) -> None:
     await state.clear()
     from sqlalchemy import select
-    from app.db.models import UserProfile
+    from app.db.models import Order
+    from aiogram.exceptions import TelegramForbiddenError
 
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(UserProfile.telegram_id))
+        result = await session.execute(
+            select(Order.telegram_id.distinct()).where(Order.status != OrderStatus.cancelled)
+        )
         user_ids = [row[0] for row in result.fetchall()]
 
     sent = 0
@@ -219,15 +230,17 @@ async def admin_broadcast_send(message: Message, state: FSMContext, bot: Bot) ->
     delay = max(0.06, settings.broadcast_delay_ms / 1000)
     for uid in user_ids:
         try:
-            await bot.send_message(uid, message.text or "")
+            await _send_broadcast_message(bot, uid, message)
             sent += 1
         except TelegramRetryAfter as e:
-            await asyncio.sleep(max(float(e.retry_after), delay))
+            await asyncio.sleep(max(float(e.retry_after), delay * 10))
             try:
-                await bot.send_message(uid, message.text or "")
+                await _send_broadcast_message(bot, uid, message)
                 sent += 1
             except Exception:
                 failed += 1
+        except TelegramForbiddenError:
+            failed += 1
         except Exception:
             failed += 1
         await asyncio.sleep(delay)
