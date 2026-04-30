@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     webapp_url: str = Field(default="", validation_alias="WEBAPP_URL")
     admin_default_currency: str = Field(default="UAH", validation_alias="ADMIN_DEFAULT_CURRENCY")
     admin_owner_ids_raw: str = Field(default="", validation_alias="ADMIN_OWNER_IDS")
-    broadcast_delay_ms: int = Field(default=100, validation_alias="BROADCAST_DELAY_MS")
+    broadcast_delay_ms: int = Field(default=300, validation_alias="BROADCAST_DELAY_MS")
     error_report_chat_id: int | None = Field(default=None, validation_alias="ERROR_REPORT_CHAT_ID")
     
     google_creds_json: Json | None = Field(default=None, validation_alias="GOOGLE_CREDS_JSON")
