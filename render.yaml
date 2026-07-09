@@ -6,6 +6,7 @@ services:
     rootDir: .
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
@@ -18,23 +19,30 @@ services:
       - key: APP_BASE_URL
         sync: false
       - key: WEBAPP_URL
-        sync: false 
+        sync: false
       - key: ADMIN_DEFAULT_CURRENCY
         value: UAH
       - key: ADMIN_OWNER_IDS
         sync: false
       - key: BROADCAST_DELAY_MS
         value: 100
+      - key: KEEP_ALIVE
+        value: "1"
 
+  # Static site: served from Render's CDN for free, never spins down —
+  # the Mini App shell opens instantly even when the API is still waking up.
   - type: web
     name: merchfice-frontend
-    runtime: node
-    plan: free
+    runtime: static
     rootDir: frontend
     buildCommand: npm ci && npm run build
-    startCommand: npm run start -- -p $PORT
+    staticPublishPath: ./out
     envVars:
       - key: NODE_VERSION
         value: 20
       - key: NEXT_PUBLIC_API_BASE_URL
         sync: false
+    headers:
+      - path: /_next/static/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable

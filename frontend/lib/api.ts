@@ -15,6 +15,19 @@ export type CatalogProduct = {
   min_price: number;
   sizes: CatalogSize[];
   is_active?: boolean;
+  group_ids?: number[];
+};
+
+export type GroupMember = {
+  id: number;
+  telegram_id: number | null;
+  username: string | null;
+};
+
+export type UserGroup = {
+  id: number;
+  name: string;
+  members: GroupMember[];
 };
 
 export type CartItem = {
@@ -96,8 +109,9 @@ class ApiClient {
     if (!response.ok) {
       let detail = `http_${response.status}`;
       try {
-        const payload = (await response.json()) as { detail?: string };
-        if (payload.detail) detail = payload.detail;
+        const payload = (await response.json()) as { detail?: unknown };
+        // FastAPI validation errors (422) send detail as an array of objects
+        if (typeof payload.detail === 'string' && payload.detail) detail = payload.detail;
       } catch {
         // ignore
       }
@@ -199,6 +213,7 @@ class ApiClient {
     description: string;
     requires_color: boolean;
     sizes: Record<string, number>;
+    group_ids?: number[];
   }): Promise<{ id: number; ok: boolean }> {
     return this.request('/api/admin/products', {
       method: 'POST',
@@ -214,6 +229,7 @@ class ApiClient {
       description: string;
       requires_color: boolean;
       sizes: Record<string, number>;
+      group_ids?: number[];
     },
   ): Promise<{ ok: boolean }> {
     return this.request(`/api/admin/products/${id}`, {
@@ -221,6 +237,35 @@ class ApiClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
+  }
+
+  // ── Admin: user groups ────────────────────────────────────────────────────
+  getAdminGroups(): Promise<{ groups: UserGroup[] }> {
+    return this.request('/api/admin/groups');
+  }
+
+  createGroup(name: string): Promise<{ id: number; ok: boolean }> {
+    return this.request('/api/admin/groups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  deleteGroup(id: number): Promise<{ ok: boolean; archived_products: number }> {
+    return this.request(`/api/admin/groups/${id}`, { method: 'DELETE' });
+  }
+
+  addGroupMembers(id: number, values: string): Promise<{ ok: boolean; added: number }> {
+    return this.request(`/api/admin/groups/${id}/members`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values }),
+    });
+  }
+
+  removeGroupMember(groupId: number, memberId: number): Promise<{ ok: boolean }> {
+    return this.request(`/api/admin/groups/${groupId}/members/${memberId}`, { method: 'DELETE' });
   }
 
   uploadProductPhoto(id: number, formData: FormData): Promise<{ ok: boolean; photo_url: string }> {

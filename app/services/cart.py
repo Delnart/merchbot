@@ -49,7 +49,8 @@ async def add_to_cart(session: AsyncSession, telegram_id: int, product_id: int, 
         )
         session.add(line)
     else:
-        line.quantity += quantity
+        # cap so the stored value stays orderable through the PATCH endpoint (le=99)
+        line.quantity = min(line.quantity + quantity, 99)
     await session.flush()
 
 

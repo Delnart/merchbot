@@ -11,15 +11,19 @@ interface AdminPageProps {
   onCreate: () => void;
   onEdit: (p: CatalogProduct) => void;
   onToggle: (id: number) => Promise<void>;
+  onOpenGroups: () => void;
 }
 
-export default function AdminPage({ products, loading, onCreate, onEdit, onToggle }: AdminPageProps) {
+export default function AdminPage({ products, loading, onCreate, onEdit, onToggle, onOpenGroups }: AdminPageProps) {
   if (loading) return <Spinner />;
 
   return (
     <>
-      <button className="btn-primary" onClick={onCreate} type="button" style={{ marginBottom: 16 }}>
+      <button className="btn-primary" onClick={onCreate} type="button" style={{ marginBottom: 8 }}>
         + Додати товар
+      </button>
+      <button className="btn-secondary" onClick={onOpenGroups} type="button" style={{ marginBottom: 16 }}>
+        👥 Групи користувачів
       </button>
 
       {products.length === 0 ? (

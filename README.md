@@ -84,7 +84,10 @@ Telegram Mini App і webhook API мають бути доступні по пу�
 
 ## Деплой на Render
 
-У репозиторії додано `render.yaml` з двома сервісами: API (Python) і Frontend (Next.js).
+У репозиторії додано `render.yaml` з двома сервісами:
+
+*   **API (Python, web service)** — FastAPI + бот.
+*   **Frontend (static site)** — Mini App збирається у статичні файли (`next build` з `output: "export"`) і роздається з CDN Render. Статичні сайти на Render **безкоштовні та ніколи не засинають**, тому апка відкривається миттєво.
 
 1. Імпортуйте репозиторій у Render як Blueprint.
 2. Вкажіть змінні середовища для API:
@@ -92,15 +95,18 @@ Telegram Mini App і webhook API мають бути доступні по пу�
     *   `WEBHOOK_SECRET`: Будь-який секретний рядок для захисту вебхуків
     *   `DATABASE_URL`: Строка підключення до PostgreSQL (наприклад, Neon або Supabase)
      *   `APP_BASE_URL`: URL API-сервісу Render (напр. `https://merchfice-api.onrender.com`)
-     *   `WEBAPP_URL`: URL фронтенд-сервісу Render (напр. `https://merchfice-frontend.onrender.com`)
+     *   `WEBAPP_URL`: URL фронтенд-сайту Render (напр. `https://merchfice-frontend.onrender.com`)
      *   `ADMIN_OWNER_IDS`: Telegram user id власників через кому (тільки ці id можуть виконати `/bind_admin_chat`)
      *   `BROADCAST_DELAY_MS`: затримка між повідомленнями у розсилці (рекомендовано 100)
-3. Вкажіть змінну `NEXT_PUBLIC_API_BASE_URL` для фронтенд-сервісу (URL API з кроку 2).
+     *   `KEEP_ALIVE`: `1` (за замовчуванням) — API самостійно пінгує свій `/health` кожні 10 хв, щоб безкоштовний тариф Render не присипляв сервіс. Один постійно активний сервіс (~744 год/міс) вкладається у безкоштовні 750 інстанс-годин, оскільки фронтенд тепер статичний і годин не витрачає.
+3. Вкажіть змінну `NEXT_PUBLIC_API_BASE_URL` для фронтенд-сайту (URL API з кроку 2).
 4. Після деплою API перейдіть на `https://<api-domain>/setup/webhook` для реєстрації webhook.
 
-## Better Stack Uptime
+> **Увага при міграції:** якщо фронтенд уже існує як звичайний web service, Blueprint не зможе змінити його тип. Видаліть старий фронтенд-сервіс у Render і синхронізуйте Blueprint заново (або створіть Static Site вручну: build `npm ci && npm run build`, publish directory `out`).
 
-Автоматично зареєструвати монітор через код неможливо без доступу до вашого акаунта Better Stack, тому зробіть це вручну:
+## Better Stack Uptime (опційно)
+
+Вбудований `KEEP_ALIVE` вже не дає API заснути, але зовнішній монітор корисний для сповіщень про падіння:
 
 1. Увійдіть на https://betterstack.com/uptime.
 2. Створіть Monitor з URL `https://<api-domain>/health`.

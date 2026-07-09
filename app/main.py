@@ -1,3 +1,4 @@
+import asyncio
 import traceback
 from contextlib import asynccontextmanager
 from html import escape
@@ -17,6 +18,23 @@ from app.webapp_api import router as webapp_router
 bot = Bot(token=settings.bot_token)
 dp = build_dispatcher()
 
+KEEP_ALIVE_INTERVAL_SECONDS = 600  # under Render's 15-min idle spin-down
+
+
+async def _keep_alive_loop() -> None:
+    """Ping our own public /health URL so Render never spins the service down."""
+    from app.webapp_api import get_http_session
+
+    url = f"{settings.app_base_url.rstrip('/')}/health"
+    while True:
+        await asyncio.sleep(KEEP_ALIVE_INTERVAL_SECONDS)
+        try:
+            http = await get_http_session()
+            async with http.get(url) as resp:
+                await resp.read()
+        except Exception:
+            pass
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -24,7 +42,24 @@ async def lifespan(_: FastAPI):
         await init_db()
     except Exception as e:
         print(f"Error during init_db: {e}")
+
+    keep_alive_task: asyncio.Task | None = None
+    if settings.keep_alive_enabled and settings.app_base_url.startswith("https://"):
+        keep_alive_task = asyncio.create_task(_keep_alive_loop())
+
     yield
+
+    if keep_alive_task is not None:
+        keep_alive_task.cancel()
+    # Let in-flight order notifications / sheet syncs finish before
+    # tearing down the HTTP session and DB engine they depend on
+    from app.services.background import drain_background_tasks
+    await drain_background_tasks(timeout=10.0)
+    import app.webapp_api as webapp_api
+    if webapp_api._http_session is not None and not webapp_api._http_session.closed:
+        await webapp_api._http_session.close()
+    from app.db.session import engine
+    await engine.dispose()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -88,5 +123,8 @@ async def telegram_webhook(
         raise HTTPException(status_code=401, detail="unauthorized")
     data = await request.json()
     update = Update.model_validate(data, context={"bot": bot})
+    # Await so Telegram delivers the next update for this chat only after this
+    # one is handled — preserves FSM ordering. All handlers are fast now
+    # (broadcast/sheets/notifications run in the background).
     await dp.feed_update(bot=bot, update=update)
     return JSONResponse({"ok": True})

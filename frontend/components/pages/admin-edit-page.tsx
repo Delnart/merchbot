@@ -1,28 +1,31 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { CatalogProduct } from '@/lib/api';
+import type { CatalogProduct, UserGroup } from '@/lib/api';
 import { resolveMediaUrl } from '@/lib/api';
 
 interface AdminEditPageProps {
   product: CatalogProduct | null;
+  groups: UserGroup[];
   onSave: (data: {
     title: string;
     description: string;
     sizesRaw: string;
     requiresColor: boolean;
+    groupIds: number[];
     photoFile: File | null;
     photoBlackFile: File | null;
   }) => Promise<void>;
 }
 
-export default function AdminEditPage({ product, onSave }: AdminEditPageProps) {
+export default function AdminEditPage({ product, groups, onSave }: AdminEditPageProps) {
   const [title, setTitle] = useState(product?.title ?? '');
   const [description, setDescription] = useState(product?.description ?? '');
   const [sizesRaw, setSizesRaw] = useState(
     product ? product.sizes.map(s => `${s.size}:${s.price}`).join(', ') : '',
   );
   const [requiresColor, setRequiresColor] = useState(product?.requires_color ?? false);
+  const [groupIds, setGroupIds] = useState<number[]>(product?.group_ids ?? []);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoBlackFile, setPhotoBlackFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(
@@ -43,6 +46,7 @@ export default function AdminEditPage({ product, onSave }: AdminEditPageProps) {
       product ? product.sizes.map(s => `${s.size}:${s.price}`).join(', ') : '',
     );
     setRequiresColor(product?.requires_color ?? false);
+    setGroupIds(product?.group_ids ?? []);
     setPhotoFile(null);
     setPhotoBlackFile(null);
     setPhotoPreview(resolveMediaUrl(product?.photo_url));
@@ -69,7 +73,7 @@ export default function AdminEditPage({ product, onSave }: AdminEditPageProps) {
     if (saving) return;
     setSaving(true);
     try {
-      await onSave({ title, description, sizesRaw, requiresColor, photoFile, photoBlackFile });
+      await onSave({ title, description, sizesRaw, requiresColor, groupIds, photoFile, photoBlackFile });
     } finally {
       setSaving(false);
     }
@@ -115,6 +119,33 @@ export default function AdminEditPage({ product, onSave }: AdminEditPageProps) {
         />
         <span className="checkbox-label">Товар має опцію кольору (Білий/Чорний)</span>
       </label>
+
+      {groups.length > 0 && (
+        <div className="form-group">
+          <label className="form-label">
+            Хто бачить товар {groupIds.length === 0 && '(зараз: всі користувачі)'}
+          </label>
+          {groups.map(g => (
+            <label key={g.id} className="checkbox-row" style={{ marginBottom: 8 }}>
+              <input
+                type="checkbox"
+                checked={groupIds.includes(g.id)}
+                onChange={e =>
+                  setGroupIds(prev =>
+                    e.target.checked ? [...prev, g.id] : prev.filter(id => id !== g.id),
+                  )
+                }
+              />
+              <span className="checkbox-label">
+                👥 {g.name} ({g.members.length})
+              </span>
+            </label>
+          ))}
+          <div style={{ fontSize: '0.8rem', opacity: 0.6, marginTop: 4 }}>
+            Якщо нічого не обрано — товар бачать усі. Якщо обрано групи — лише їхні учасники.
+          </div>
+        </div>
+      )}
 
       <p className="section-title" style={{ marginTop: 0 }}>
         {requiresColor ? 'Фото товару (Білий)' : 'Фото товару'}

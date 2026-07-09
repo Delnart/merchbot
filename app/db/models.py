@@ -78,7 +78,12 @@ class Product(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    sizes: Mapped[list["ProductSize"]] = relationship(back_populates="product", cascade="all, delete-orphan")
+    sizes: Mapped[list["ProductSize"]] = relationship(
+        back_populates="product", cascade="all, delete-orphan", order_by="ProductSize.id"
+    )
+    visibility_groups: Mapped[list["ProductVisibility"]] = relationship(
+        back_populates="product", cascade="all, delete-orphan"
+    )
 
 class ProductSize(Base):
     __tablename__ = "product_sizes"
@@ -90,6 +95,39 @@ class ProductSize(Base):
     price: Mapped[float] = mapped_column(Numeric(10, 2))
 
     product: Mapped[Product] = relationship(back_populates="sizes")
+
+class UserGroup(Base):
+    __tablename__ = "user_groups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    members: Mapped[list["UserGroupMember"]] = relationship(
+        back_populates="group", cascade="all, delete-orphan", order_by="UserGroupMember.id"
+    )
+
+class UserGroupMember(Base):
+    __tablename__ = "user_group_members"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("user_groups.id", ondelete="CASCADE"), index=True)
+    telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    group: Mapped[UserGroup] = relationship(back_populates="members")
+
+class ProductVisibility(Base):
+    __tablename__ = "product_visibility"
+    __table_args__ = (UniqueConstraint("product_id", "group_id", name="uq_product_visibility"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("user_groups.id", ondelete="CASCADE"), index=True)
+
+    product: Mapped[Product] = relationship(back_populates="visibility_groups")
+    group: Mapped[UserGroup] = relationship()
 
 class CartItem(Base):
     __tablename__ = "cart_items"

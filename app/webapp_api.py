@@ -2,14 +2,16 @@ import asyncio
 import io
 import imghdr
 import time
-from collections import defaultdict, deque
+from collections import OrderedDict, defaultdict, deque
 from decimal import Decimal
 
 import aiohttp
 import re
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Header, Request, UploadFile
-from pydantic import BaseModel, field_validator
+from fastapi.responses import Response
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -20,12 +22,17 @@ from app.db.models import (
 )
 from app.db.session import AsyncSessionLocal
 from app.services.admin_config import get_active_admin_binding, get_or_create_shop_config
+from app.services.background import fire_and_forget, run_blocking_in_background
 from app.services.cart import add_to_cart, clear_cart, ensure_user, list_cart
 from app.services.catalog import (
     archive_product, create_product, get_product, get_sizes,
-    list_active_products, list_all_products, replace_sizes, set_product_description, set_product_photo,
+    list_all_products, list_visible_products, replace_sizes, set_product_description, set_product_photo,
 )
 from app.services.google_sheets import sync_order_to_sheet
+from app.services.groups import (
+    add_members, can_user_see_product, create_group, delete_group, get_group,
+    get_product_group_ids, get_user_group_ids, list_groups, remove_member, set_product_groups,
+)
 from app.services.orders import create_order_from_cart, set_order_admin_message
 from app.services.telegram_auth import validate_init_data
 
@@ -37,6 +44,50 @@ CHECKOUT_RATE_LIMIT = 5
 CHECKOUT_RATE_WINDOW_SECONDS = 60
 _checkout_hits: dict[str, deque[float]] = defaultdict(deque)
 _checkout_rate_lock = asyncio.Lock()
+
+# ── Shared HTTP session and photo cache ──────────────────────────────────────
+
+_http_session: aiohttp.ClientSession | None = None
+
+PHOTO_CACHE_MAX_BYTES = 32 * 1024 * 1024  # keep well under Render's 512 MB RAM
+_photo_cache: OrderedDict[str, tuple[bytes, str]] = OrderedDict()
+_photo_cache_bytes = 0
+_photo_cache_lock = asyncio.Lock()
+
+# Telegram get_chat_member is slow (~300ms) — cache admin checks
+ADMIN_CACHE_OK_TTL = 300.0
+ADMIN_CACHE_FAIL_TTL = 30.0
+_admin_cache: dict[int, tuple[bool, float]] = {}
+
+
+async def get_http_session() -> aiohttp.ClientSession:
+    global _http_session
+    if _http_session is None or _http_session.closed:
+        _http_session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
+    return _http_session
+
+
+async def _photo_cache_get(file_id: str) -> tuple[bytes, str] | None:
+    async with _photo_cache_lock:
+        cached = _photo_cache.get(file_id)
+        if cached is not None:
+            _photo_cache.move_to_end(file_id)
+        return cached
+
+
+async def _photo_cache_put(file_id: str, content: bytes, content_type: str) -> None:
+    global _photo_cache_bytes
+    if len(content) > PHOTO_CACHE_MAX_BYTES:
+        return
+    async with _photo_cache_lock:
+        existing = _photo_cache.pop(file_id, None)
+        if existing is not None:
+            _photo_cache_bytes -= len(existing[0])
+        while _photo_cache and _photo_cache_bytes + len(content) > PHOTO_CACHE_MAX_BYTES:
+            _, (evicted, _ct) = _photo_cache.popitem(last=False)
+            _photo_cache_bytes -= len(evicted)
+        _photo_cache[file_id] = (content, content_type)
+        _photo_cache_bytes += len(content)
 
 
 def _checkout_rate_key(request: Request, telegram_id: int) -> str:
@@ -78,11 +129,29 @@ async def require_admin(telegram_id: int = Depends(get_telegram_id)) -> int:
     from app.services.auth import is_chat_admin
     from app.main import bot
 
+    now = time.monotonic()
+    cached = _admin_cache.get(telegram_id)
+    if cached is not None and cached[1] > now:
+        if cached[0]:
+            return telegram_id
+        raise HTTPException(status_code=403, detail="not_admin")
+
     async with AsyncSessionLocal() as session:
         binding = await get_active_admin_binding(session)
     if binding is None:
         raise HTTPException(status_code=403, detail="no_admin_chat")
-    if not await is_chat_admin(bot, binding.chat_id, telegram_id):
+    is_admin = await is_chat_admin(bot, binding.chat_id, telegram_id)
+    if is_admin is None:
+        # Telegram API failed — deny this request but don't poison the cache
+        raise HTTPException(status_code=403, detail="not_admin")
+    if len(_admin_cache) > 5000:
+        for key in [k for k, v in _admin_cache.items() if v[1] <= now]:
+            _admin_cache.pop(key, None)
+    _admin_cache[telegram_id] = (
+        is_admin,
+        now + (ADMIN_CACHE_OK_TTL if is_admin else ADMIN_CACHE_FAIL_TTL),
+    )
+    if not is_admin:
         raise HTTPException(status_code=403, detail="not_admin")
     return telegram_id
 
@@ -93,11 +162,11 @@ class CartAddRequest(BaseModel):
     product_id: int
     size: str
     color: str | None = None
-    quantity: int = 1
+    quantity: int = Field(default=1, ge=1, le=99)
 
 
 class CartUpdateRequest(BaseModel):
-    quantity: int
+    quantity: int = Field(ge=0, le=99)
 
 
 class RecipientCreate(BaseModel):
@@ -133,6 +202,7 @@ class ProductCreate(BaseModel):
     description: str
     requires_color: bool = False
     sizes: dict[str, float]  # e.g. {"S": 500, "M": 550}
+    group_ids: list[int] = []  # empty = visible to everyone
 
 
 class ProductUpdate(BaseModel):
@@ -140,20 +210,33 @@ class ProductUpdate(BaseModel):
     description: str | None = None
     requires_color: bool | None = None
     sizes: dict[str, float] | None = None
+    group_ids: list[int] | None = None  # None = unchanged, [] = visible to everyone
+
+
+class GroupCreate(BaseModel):
+    name: str
+
+
+class GroupMembersAdd(BaseModel):
+    values: str  # telegram ids and/or @usernames separated by commas/newlines
 
 
 # ── Catalog endpoints ────────────────────────────────────────────────────────
 
 @router.get("/catalog")
-async def api_catalog(telegram_id: int = Depends(get_telegram_id)):
+async def api_catalog(user: dict = Depends(get_telegram_user)):
+    telegram_id = user.get("id")
+    if telegram_id is None:
+        raise HTTPException(status_code=401, detail="missing_user_id")
+    username = user.get("username")
     async with AsyncSessionLocal() as session:
         async with session.begin():
-            await ensure_user(session, telegram_id, None, None, None)
-        products = await list_active_products(session)
+            await ensure_user(session, telegram_id, username, user.get("first_name"), user.get("last_name"))
+        group_ids = await get_user_group_ids(session, telegram_id, username)
+        products = await list_visible_products(session, group_ids)
         result = []
         for p in products:
-            sizes = await get_sizes(session, p.id)
-            min_price = min((s.price for s in sizes), default=0)
+            min_price = min((s.price for s in p.sizes), default=0)
             result.append({
                 "id": p.id,
                 "title": p.title,
@@ -162,16 +245,21 @@ async def api_catalog(telegram_id: int = Depends(get_telegram_id)):
                 "photo_black_url": f"/api/photos/{p.photo_black_file_id}" if getattr(p, 'photo_black_file_id', None) else None,
                 "requires_color": p.requires_color,
                 "min_price": float(min_price),
-                "sizes": [{"size": s.size, "price": float(s.price)} for s in sizes],
+                "sizes": [{"size": s.size, "price": float(s.price)} for s in p.sizes],
             })
     return {"products": result}
 
 
 @router.get("/catalog/{product_id}")
-async def api_catalog_item(product_id: int, _: int = Depends(get_telegram_id)):
+async def api_catalog_item(product_id: int, user: dict = Depends(get_telegram_user)):
+    telegram_id = user.get("id")
+    if telegram_id is None:
+        raise HTTPException(status_code=401, detail="missing_user_id")
     async with AsyncSessionLocal() as session:
         product = await get_product(session, product_id)
         if not product or not product.is_active:
+            raise HTTPException(status_code=404, detail="product_not_found")
+        if not await can_user_see_product(session, product_id, telegram_id, user.get("username")):
             raise HTTPException(status_code=404, detail="product_not_found")
         sizes = await get_sizes(session, product_id)
     return {
@@ -186,24 +274,42 @@ async def api_catalog_item(product_id: int, _: int = Depends(get_telegram_id)):
 
 
 @router.get("/photos/{file_id:path}")
-async def api_photo_proxy(file_id: str):
-    """Proxy Telegram file to the browser."""
+async def api_photo_proxy(file_id: str, if_none_match: str | None = Header(default=None, alias="If-None-Match")):
+    """Proxy Telegram file to the browser with in-memory and browser caching."""
+    # A Telegram file_id always points to the same content — cache aggressively
+    etag = f'"{file_id}"'
+    cache_headers = {"Cache-Control": "public, max-age=31536000, immutable", "ETag": etag}
+    if if_none_match == etag:
+        return Response(status_code=304, headers=cache_headers)
+
+    cached = await _photo_cache_get(file_id)
+    if cached is not None:
+        return Response(content=cached[0], media_type=cached[1], headers=cache_headers)
+
     try:
+        http = await get_http_session()
         tg_file_url = f"https://api.telegram.org/bot{settings.bot_token}/getFile?file_id={file_id}"
-        async with aiohttp.ClientSession() as http:
-            async with http.get(tg_file_url) as resp:
-                data = await resp.json()
-                if not data.get("ok"):
-                    raise HTTPException(status_code=404, detail="file_not_found")
-                file_path = data["result"]["file_path"]
+        async with http.get(tg_file_url) as resp:
+            if resp.status != 200:
+                raise HTTPException(status_code=502, detail="photo_fetch_failed")
+            data = await resp.json()
+            if not data.get("ok"):
+                raise HTTPException(status_code=404, detail="file_not_found")
+            file_path = data["result"]["file_path"]
 
-            download_url = f"https://api.telegram.org/file/bot{settings.bot_token}/{file_path}"
-            async with http.get(download_url) as resp:
-                content = await resp.read()
-                content_type = resp.headers.get("Content-Type", "image/jpeg")
+        download_url = f"https://api.telegram.org/file/bot{settings.bot_token}/{file_path}"
+        async with http.get(download_url) as resp:
+            # Never cache or serve Telegram error bodies as images: with the
+            # immutable cache headers a poisoned entry would stick for a year
+            if resp.status != 200:
+                raise HTTPException(status_code=502, detail="photo_fetch_failed")
+            content = await resp.read()
+            content_type = resp.headers.get("Content-Type", "image/jpeg")
+        if not content_type.startswith("image/"):
+            content_type = "image/jpeg"
 
-        from fastapi.responses import Response
-        return Response(content=content, media_type=content_type, headers={"Cache-Control": "public, max-age=86400"})
+        await _photo_cache_put(file_id, content, content_type)
+        return Response(content=content, media_type=content_type, headers=cache_headers)
     except HTTPException:
         raise
     except Exception:
@@ -250,10 +356,15 @@ async def api_cart_view(telegram_id: int = Depends(get_telegram_id)):
 
 
 @router.post("/cart")
-async def api_cart_add(body: CartAddRequest, telegram_id: int = Depends(get_telegram_id)):
+async def api_cart_add(body: CartAddRequest, user: dict = Depends(get_telegram_user)):
+    telegram_id = user.get("id")
+    if telegram_id is None:
+        raise HTTPException(status_code=401, detail="missing_user_id")
     async with AsyncSessionLocal() as session:
         async with session.begin():
-            await ensure_user(session, telegram_id, None, None, None)
+            await ensure_user(session, telegram_id, user.get("username"), user.get("first_name"), user.get("last_name"))
+            if not await can_user_see_product(session, body.product_id, telegram_id, user.get("username")):
+                raise HTTPException(status_code=404, detail="product_not_found")
             try:
                 await add_to_cart(session, telegram_id, body.product_id, body.size, body.color, body.quantity)
             except ValueError:
@@ -428,9 +539,12 @@ async def api_checkout(
     recipient_phone: str | None = Form(None),
     save_recipient: bool = Form(False),
     receipt_photo: UploadFile = File(...),
-    telegram_id: int = Depends(get_telegram_id),
+    user: dict = Depends(get_telegram_user),
 ):
     """Process checkout with receipt photo upload."""
+    telegram_id = user.get("id")
+    if telegram_id is None:
+        raise HTTPException(status_code=401, detail="missing_user_id")
     await _enforce_checkout_rate_limit(request, telegram_id)
 
     # Validate delivery method
@@ -490,6 +604,15 @@ async def api_checkout(
     async with AsyncSessionLocal() as session:
         async with session.begin():
             config = await get_or_create_shop_config(session)
+            # Re-verify group visibility: membership or product restrictions
+            # may have changed since the item was added to the cart
+            checked_products: set[int] = set()
+            for cart_item, _product in await list_cart(session, telegram_id):
+                if cart_item.product_id in checked_products:
+                    continue
+                checked_products.add(cart_item.product_id)
+                if not await can_user_see_product(session, cart_item.product_id, telegram_id, user.get("username")):
+                    raise HTTPException(status_code=409, detail="product_not_available")
             order = await create_order_from_cart(
                 session,
                 telegram_id=telegram_id,
@@ -504,9 +627,11 @@ async def api_checkout(
             await session.refresh(order)
             await session.refresh(order, attribute_names=["items"])
 
-    # Sync to Google Sheets
+    # Sync to Google Sheets in a worker thread: gspread performs blocking HTTP
+    # calls that would freeze the event loop and delay the response by seconds
     items_str = "; ".join([f"{i.title} {i.size}{' ' + i.color if i.color else ''} x{i.quantity}" for i in order.items])
-    sync_order_to_sheet(
+    run_blocking_in_background(
+        sync_order_to_sheet,
         order_id=order.id,
         status=order.status.value,
         total=float(order.total_amount),
@@ -516,9 +641,11 @@ async def api_checkout(
         items_str=items_str,
     )
 
-    # Notify admin chat
+    # Notify admin chat without making the customer wait
     if binding is not None:
-        await _notify_admin_chat(binding, order, final_name, final_phone, delivery_method, address, receipt_file_id)
+        fire_and_forget(
+            _notify_admin_chat(binding, order, final_name, final_phone, delivery_method, address, receipt_file_id)
+        )
 
     return {"ok": True, "order_id": order.id}
 
@@ -557,7 +684,7 @@ async def _upload_photo_to_telegram(chat_id: int, photo_bytes: bytes) -> str:
     if img_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(status_code=400, detail="invalid_file_type")
 
-    photo_bytes = resize_image_for_telegram(photo_bytes)
+    photo_bytes = await asyncio.to_thread(resize_image_for_telegram, photo_bytes)
     input_file = BufferedInputFile(photo_bytes, filename="receipt.jpg")
     try:
         msg = await bot.send_photo(chat_id=chat_id, photo=input_file, disable_notification=True)
@@ -677,9 +804,9 @@ async def _notify_admin_chat(binding, order, name, phone, delivery_method, addre
 async def api_admin_products(admin_id: int = Depends(require_admin)):
     async with AsyncSessionLocal() as session:
         products = await list_all_products(session)
+        product_groups = await get_product_group_ids(session, [p.id for p in products])
         result = []
         for p in products:
-            sizes = await get_sizes(session, p.id)
             result.append({
                 "id": p.id,
                 "title": p.title,
@@ -688,7 +815,8 @@ async def api_admin_products(admin_id: int = Depends(require_admin)):
                 "photo_url": f"/api/photos/{p.photo_file_id}" if p.photo_file_id else None,
                 "photo_black_url": f"/api/photos/{p.photo_black_file_id}" if getattr(p, 'photo_black_file_id', None) else None,
                 "is_active": p.is_active,
-                "sizes": [{"size": s.size, "price": float(s.price)} for s in sizes],
+                "sizes": [{"size": s.size, "price": float(s.price)} for s in p.sizes],
+                "group_ids": product_groups.get(p.id, []),
             })
     return {"products": result}
 
@@ -699,6 +827,8 @@ async def api_admin_product_create(body: ProductCreate, admin_id: int = Depends(
         async with session.begin():
             product = await create_product(session, title=body.title, description=body.description, requires_color=body.requires_color)
             await replace_sizes(session, product, body.sizes)
+            if body.group_ids:
+                await set_product_groups(session, product.id, body.group_ids)
             pid = product.id
     return {"id": pid, "ok": True}
 
@@ -718,6 +848,75 @@ async def api_admin_product_update(product_id: int, body: ProductUpdate, admin_i
                 product.requires_color = body.requires_color
             if body.sizes is not None:
                 await replace_sizes(session, product, body.sizes)
+            if body.group_ids is not None:
+                await set_product_groups(session, product_id, body.group_ids)
+    return {"ok": True}
+
+
+# ── Admin: user groups ───────────────────────────────────────────────────────
+
+@router.get("/admin/groups")
+async def api_admin_groups(admin_id: int = Depends(require_admin)):
+    async with AsyncSessionLocal() as session:
+        groups = await list_groups(session)
+    return {
+        "groups": [
+            {
+                "id": g.id,
+                "name": g.name,
+                "members": [
+                    {"id": m.id, "telegram_id": m.telegram_id, "username": m.username}
+                    for m in g.members
+                ],
+            }
+            for g in groups
+        ]
+    }
+
+
+@router.post("/admin/groups")
+async def api_admin_group_create(body: GroupCreate, admin_id: int = Depends(require_admin)):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="invalid_group_name")
+    try:
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                group = await create_group(session, name)
+                gid = group.id
+    except IntegrityError:
+        raise HTTPException(status_code=400, detail="group_already_exists")
+    return {"id": gid, "ok": True}
+
+
+@router.delete("/admin/groups/{group_id}")
+async def api_admin_group_delete(group_id: int, admin_id: int = Depends(require_admin)):
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            deleted, archived = await delete_group(session, group_id)
+            if not deleted:
+                raise HTTPException(status_code=404, detail="group_not_found")
+    return {"ok": True, "archived_products": archived}
+
+
+@router.post("/admin/groups/{group_id}/members")
+async def api_admin_group_add_members(group_id: int, body: GroupMembersAdd, admin_id: int = Depends(require_admin)):
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            group = await get_group(session, group_id)
+            if group is None:
+                raise HTTPException(status_code=404, detail="group_not_found")
+            added = await add_members(session, group, body.values)
+    return {"ok": True, "added": added}
+
+
+@router.delete("/admin/groups/{group_id}/members/{member_id}")
+async def api_admin_group_remove_member(group_id: int, member_id: int, admin_id: int = Depends(require_admin)):
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            removed = await remove_member(session, group_id, member_id)
+            if not removed:
+                raise HTTPException(status_code=404, detail="member_not_found")
     return {"ok": True}
 
 
@@ -734,7 +933,7 @@ async def api_admin_product_photo(
     from aiogram.types import BufferedInputFile
 
     # Send to admin's own chat to get file_id
-    photo_bytes = resize_image_for_telegram(photo_bytes)
+    photo_bytes = await asyncio.to_thread(resize_image_for_telegram, photo_bytes)
     input_file = BufferedInputFile(photo_bytes, filename="product.jpg")
     
     try:
@@ -782,7 +981,7 @@ async def api_admin_product_photo_black(
     from app.main import bot
     from aiogram.types import BufferedInputFile
 
-    photo_bytes = resize_image_for_telegram(photo_bytes)
+    photo_bytes = await asyncio.to_thread(resize_image_for_telegram, photo_bytes)
     input_file = BufferedInputFile(photo_bytes, filename="product_black.jpg")
     
     try:

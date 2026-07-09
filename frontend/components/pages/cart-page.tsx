@@ -5,6 +5,8 @@ import type { CartResponse } from '@/lib/api';
 import { resolveMediaUrl } from '@/lib/api';
 import Spinner from '@/components/ui/spinner';
 
+const MAX_QUANTITY = 99;
+
 interface CartPageProps {
   cart: CartResponse;
   loading: boolean;
@@ -74,7 +76,7 @@ export default function CartPage({ cart, loading, onUpdateQty, onClear, onChecko
                 <div className="qty-control">
                   <button
                     className="qty-btn"
-                    onClick={() => onUpdateQty(item.id, item.quantity - 1)}
+                    onClick={() => onUpdateQty(item.id, Math.min(MAX_QUANTITY, item.quantity - 1))}
                     type="button"
                     aria-label="Зменшити"
                   >
@@ -83,7 +85,8 @@ export default function CartPage({ cart, loading, onUpdateQty, onClear, onChecko
                   <span className="qty-value">{item.quantity}</span>
                   <button
                     className="qty-btn"
-                    onClick={() => onUpdateQty(item.id, item.quantity + 1)}
+                    onClick={() => onUpdateQty(item.id, Math.min(MAX_QUANTITY, item.quantity + 1))}
+                    disabled={item.quantity >= MAX_QUANTITY}
                     type="button"
                     aria-label="Збільшити"
                   >

@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, ErrorEvent
-from aiogram.exceptions import TelegramRetryAfter
+from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 import traceback
 
 from app.bot.keyboards import (
@@ -19,6 +19,7 @@ from app.db.models import OrderStatus
 from app.db.session import AsyncSessionLocal
 from app.services.admin_config import bind_admin_chat, get_active_admin_binding, get_or_create_shop_config
 from app.services.auth import is_chat_admin, is_group_chat
+from app.services.background import fire_and_forget, run_blocking_in_background
 from app.services.cart import ensure_user
 from app.services.catalog import list_active_products
 from app.services.orders import get_order, set_order_admin_message, set_order_status
@@ -32,7 +33,7 @@ async def check_admin_rights(user_id: int, bot: Bot) -> bool:
         binding = await get_active_admin_binding(session)
     if binding is None:
         return False
-    return await is_chat_admin(bot, binding.chat_id, user_id)
+    return bool(await is_chat_admin(bot, binding.chat_id, user_id))
 
 
 def _delivery_label(method: str) -> str:
@@ -121,8 +122,8 @@ async def clear_orders_handler(message: Message, bot: Bot) -> None:
             await delete_all_orders(session)
             
     from app.services.google_sheets import clear_orders_sheet
-    clear_orders_sheet()
-    
+    await asyncio.to_thread(clear_orders_sheet)
+
     await message.answer("✅ Всі замовлення було успішно видалено з бази даних та таблиці Google Sheets.")
 
 
@@ -212,19 +213,7 @@ async def _send_broadcast_message(bot: Bot, uid: int, message: Message) -> None:
         await bot.send_message(uid, message.text or "")
 
 
-@router.message(AdminConfigState.waiting_broadcast_message)
-async def admin_broadcast_send(message: Message, state: FSMContext, bot: Bot) -> None:
-    await state.clear()
-    from sqlalchemy import select
-    from app.db.models import Order
-    from aiogram.exceptions import TelegramForbiddenError
-
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(Order.telegram_id.distinct()).where(Order.status != OrderStatus.cancelled)
-        )
-        user_ids = [row[0] for row in result.fetchall()]
-
+async def _run_broadcast(bot: Bot, report_chat_id: int, message: Message, user_ids: list[int]) -> None:
     sent = 0
     failed = 0
     delay = max(0.06, settings.broadcast_delay_ms / 1000)
@@ -245,10 +234,33 @@ async def admin_broadcast_send(message: Message, state: FSMContext, bot: Bot) ->
             failed += 1
         await asyncio.sleep(delay)
 
-    await message.answer(
-        f"📢 Розсилку завершено!\n✅ Надіслано: {sent}\n❌ Не вдалося: {failed}",
-        reply_markup=admin_main_keyboard(),
-    )
+    try:
+        await bot.send_message(
+            report_chat_id,
+            f"📢 Розсилку завершено!\n✅ Надіслано: {sent}\n❌ Не вдалося: {failed}",
+            reply_markup=admin_main_keyboard(),
+        )
+    except Exception:
+        pass
+
+
+@router.message(AdminConfigState.waiting_broadcast_message)
+async def admin_broadcast_send(message: Message, state: FSMContext, bot: Bot) -> None:
+    await state.clear()
+    from sqlalchemy import select
+    from app.db.models import Order
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Order.telegram_id.distinct()).where(Order.status != OrderStatus.cancelled)
+        )
+        user_ids = [row[0] for row in result.fetchall()]
+
+    # A broadcast to hundreds of users takes minutes — run it in the
+    # background and confirm right away so the admin isn't left hanging.
+    # Pass the whole message so photo broadcasts keep working.
+    await message.answer(f"📢 Розсилку запущено — отримувачів: {len(user_ids)}. Звіт надійде після завершення.")
+    fire_and_forget(_run_broadcast(bot, message.chat.id, message, user_ids))
 
 
 # ── Order status (admin chat) ───────────────────────────────────────────────
@@ -320,7 +332,8 @@ async def order_status_handler(callback: CallbackQuery, bot: Bot) -> None:
 
     await callback.answer(f"Статус змінено: {status_translations.get(status, status.value)}")
 
-    sync_order_to_sheet(
+    run_blocking_in_background(
+        sync_order_to_sheet,
         order_id=order_id,
         status=status.value,
         total=order_total,

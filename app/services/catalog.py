@@ -2,8 +2,10 @@ from decimal import Decimal
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.db.models import Product, ProductSize
+from app.services.groups import visibility_filter
 
 
 async def create_product(session: AsyncSession, title: str, description: str, requires_color: bool = False) -> Product:
@@ -19,12 +21,31 @@ async def get_product(session: AsyncSession, product_id: int) -> Product | None:
 
 
 async def list_active_products(session: AsyncSession) -> list[Product]:
-    result = await session.execute(select(Product).where(Product.is_active.is_(True)).order_by(Product.id.desc()))
+    result = await session.execute(
+        select(Product)
+        .where(Product.is_active.is_(True))
+        .options(selectinload(Product.sizes))
+        .order_by(Product.id.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def list_visible_products(session: AsyncSession, group_ids: set[int]) -> list[Product]:
+    """Active products visible to a user with the given group memberships."""
+    result = await session.execute(
+        select(Product)
+        .where(Product.is_active.is_(True))
+        .where(visibility_filter(group_ids))
+        .options(selectinload(Product.sizes))
+        .order_by(Product.id.desc())
+    )
     return list(result.scalars().all())
 
 
 async def list_all_products(session: AsyncSession) -> list[Product]:
-    result = await session.execute(select(Product).order_by(Product.id.desc()))
+    result = await session.execute(
+        select(Product).options(selectinload(Product.sizes)).order_by(Product.id.desc())
+    )
     return list(result.scalars().all())
 
 

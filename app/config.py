@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     admin_owner_ids_raw: str = Field(default="", validation_alias="ADMIN_OWNER_IDS")
     broadcast_delay_ms: int = Field(default=300, validation_alias="BROADCAST_DELAY_MS")
     error_report_chat_id: int | None = Field(default=None, validation_alias="ERROR_REPORT_CHAT_ID")
+    # Self-ping /health every 10 min so Render's free tier never spins the API
+    # down (15 min idle threshold). One always-on service fits the free plan.
+    keep_alive_enabled: bool = Field(default=True, validation_alias="KEEP_ALIVE")
     
     google_creds_json: Json | None = Field(default=None, validation_alias="GOOGLE_CREDS_JSON")
     google_sheets_id: str = Field(default="", validation_alias="GOOGLE_SHEETS_ID")

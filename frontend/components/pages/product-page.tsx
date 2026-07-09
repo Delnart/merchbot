@@ -6,21 +6,25 @@ import type { CatalogProduct } from '@/lib/api';
 import { resolveMediaUrl } from '@/lib/api';
 import Spinner from '@/components/ui/spinner';
 
+const MAX_QUANTITY = 99;
+
 interface ProductPageProps {
   product: CatalogProduct | null;
   loading: boolean;
-  onAddToCart: (size: string, color: string | null) => Promise<void>;
+  onAddToCart: (size: string, color: string | null, quantity: number) => Promise<void>;
 }
 
 export default function ProductPage({ product, loading, onAddToCart }: ProductPageProps) {
   const [selectedSize, setSelectedSize] = useState('');
   const [selectedColor, setSelectedColor] = useState<'Білий' | 'Чорний'>('Білий');
+  const [quantity, setQuantity] = useState(1);
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     if (product) {
       setSelectedSize(product.sizes[0]?.size ?? '');
       setSelectedColor('Білий');
+      setQuantity(1);
     }
   }, [product?.id]);
 
@@ -33,11 +37,13 @@ export default function ProductPage({ product, loading, onAddToCart }: ProductPa
       : product.photo_url;
   const resolvedPhotoUrl = resolveMediaUrl(photoUrl);
 
+  const selectedPrice = product.sizes.find(s => s.size === selectedSize)?.price ?? 0;
+
   const handleAdd = async () => {
     if (!selectedSize) return;
     setAdding(true);
     try {
-      await onAddToCart(selectedSize, product.requires_color ? selectedColor : null);
+      await onAddToCart(selectedSize, product.requires_color ? selectedColor : null, quantity);
     } finally {
       setAdding(false);
     }
@@ -95,13 +101,43 @@ export default function ProductPage({ product, loading, onAddToCart }: ProductPa
         ))}
       </div>
 
+      <p className="section-title">Кількість</p>
+      <div
+        className="qty-control"
+        style={{ marginBottom: 16, width: 'fit-content' }}
+      >
+        <button
+          className="qty-btn"
+          onClick={() => setQuantity(q => Math.max(1, q - 1))}
+          disabled={quantity <= 1}
+          type="button"
+          aria-label="Зменшити кількість"
+        >
+          −
+        </button>
+        <span className="qty-value">{quantity}</span>
+        <button
+          className="qty-btn"
+          onClick={() => setQuantity(q => Math.min(MAX_QUANTITY, q + 1))}
+          disabled={quantity >= MAX_QUANTITY}
+          type="button"
+          aria-label="Збільшити кількість"
+        >
+          +
+        </button>
+      </div>
+
       <button
         className="btn-primary"
         onClick={handleAdd}
         disabled={!selectedSize || adding}
         type="button"
       >
-        {adding ? 'Додаємо...' : 'Додати до кошика'}
+        {adding
+          ? 'Додаємо...'
+          : quantity > 1
+            ? `Додати до кошика · ${quantity} шт · ${selectedPrice * quantity} грн`
+            : 'Додати до кошика'}
       </button>
     </div>
   );

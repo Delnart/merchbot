@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { CartResponse, CatalogProduct, Order, Recipient, ShopConfig } from '@/lib/api';
+import type { CartResponse, CatalogProduct, Order, Recipient, ShopConfig, UserGroup } from '@/lib/api';
 import { buildApiClient } from '@/lib/api';
 import { getTelegramInitData, getTelegramWebApp, isOpenedInTelegram } from '@/lib/telegram';
 import { humanizeApiError, parseSizesInput } from '@/lib/validation';
 
 import AdminEditPage from '@/components/pages/admin-edit-page';
+import AdminGroupsPage from '@/components/pages/admin-groups-page';
 import AdminPage from '@/components/pages/admin-page';
 import CartPage from '@/components/pages/cart-page';
 import CatalogPage from '@/components/pages/catalog-page';
@@ -26,6 +27,7 @@ export type Page =
   | 'settings'
   | 'admin'
   | 'admin-edit'
+  | 'admin-groups'
   | 'success';
 
 const PAGE_TITLES: Record<Page, string> = {
@@ -36,6 +38,7 @@ const PAGE_TITLES: Record<Page, string> = {
   settings: 'Мій профіль',
   admin: 'Управління товарами',
   'admin-edit': '',
+  'admin-groups': 'Групи користувачів',
   success: 'Готово',
 };
 
@@ -71,6 +74,7 @@ export default function MiniAppShell() {
   const [adminProducts, setAdminProducts] = useState<CatalogProduct[]>([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [editingProduct, setEditingProduct] = useState<CatalogProduct | null>(null);
+  const [adminGroups, setAdminGroups] = useState<UserGroup[]>([]);
 
   // Success
   const [successOrderId, setSuccessOrderId] = useState<number | null>(null);
@@ -100,20 +104,25 @@ export default function MiniAppShell() {
     }
 
     const bootstrap = async () => {
+      // Admin check runs in parallel and never blocks the first render
+      const adminPromise = api
+        .checkAdmin()
+        .then(d => setIsAdmin(Boolean(d.is_admin)))
+        .catch(() => {
+          // not an admin — that's fine
+        });
+
       try {
         const [catalogData, cartData] = await Promise.all([api.getCatalog(), api.getCart()]);
         setProducts(catalogData.products);
         setCart(cartData);
 
-        try {
-          const adminData = await api.checkAdmin();
-          setIsAdmin(Boolean(adminData.is_admin));
-        } catch {
-          // not an admin — that's fine
-        }
-
         const urlPage = new URLSearchParams(window.location.search).get('page');
-        if (urlPage === 'admin') setPage('admin');
+        if (urlPage === 'admin') {
+          await adminPromise;
+          setPage('admin');
+          void loadAdmin();
+        }
       } catch (e) {
         showToast(humanizeApiError(e));
       } finally {
@@ -123,6 +132,7 @@ export default function MiniAppShell() {
     };
 
     void bootstrap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, showToast]);
 
   // ── Cart badge update ─────────────────────────────────────────────────────
@@ -193,12 +203,12 @@ export default function MiniAppShell() {
     }
   };
 
-  const addToCart = async (size: string, color: string | null) => {
+  const addToCart = async (size: string, color: string | null, quantity: number) => {
     if (!selectedProduct) return;
     try {
-      await api.addToCart(selectedProduct.id, size, color);
+      await api.addToCart(selectedProduct.id, size, color, quantity);
       await reloadCart();
-      showToast('Додано в кошик ✓');
+      showToast(quantity > 1 ? `Додано в кошик · ${quantity} шт ✓` : 'Додано в кошик ✓');
     } catch (e) {
       showToast(humanizeApiError(e));
     }
@@ -295,12 +305,71 @@ export default function MiniAppShell() {
   const loadAdmin = async () => {
     setAdminLoading(true);
     try {
-      const data = await api.getAdminProducts();
-      setAdminProducts(data.products);
+      const [productsData, groupsData] = await Promise.all([
+        api.getAdminProducts(),
+        api.getAdminGroups(),
+      ]);
+      setAdminProducts(productsData.products);
+      setAdminGroups(groupsData.groups);
     } catch (e) {
       showToast(humanizeApiError(e));
     } finally {
       setAdminLoading(false);
+    }
+  };
+
+  const reloadGroups = async () => {
+    try {
+      const data = await api.getAdminGroups();
+      setAdminGroups(data.groups);
+    } catch (e) {
+      showToast(humanizeApiError(e));
+    }
+  };
+
+  const createGroup = async (name: string) => {
+    try {
+      await api.createGroup(name);
+      await reloadGroups();
+      showToast('Групу створено ✓');
+    } catch (e) {
+      showToast(humanizeApiError(e));
+      throw e; // let the form keep its input
+    }
+  };
+
+  const deleteGroup = async (id: number) => {
+    try {
+      const result = await api.deleteGroup(id);
+      await Promise.all([reloadGroups(), loadAdmin()]);
+      showToast(
+        result.archived_products > 0
+          ? `Групу видалено. Товарів заархівовано: ${result.archived_products}`
+          : 'Групу видалено',
+      );
+    } catch (e) {
+      showToast(humanizeApiError(e));
+    }
+  };
+
+  const addGroupMembers = async (groupId: number, values: string): Promise<number> => {
+    try {
+      const result = await api.addGroupMembers(groupId, values);
+      await reloadGroups();
+      showToast(result.added > 0 ? `Додано учасників: ${result.added} ✓` : 'Нікого не додано — перевірте формат');
+      return result.added;
+    } catch (e) {
+      showToast(humanizeApiError(e));
+      throw e; // let the form keep its input
+    }
+  };
+
+  const removeGroupMember = async (groupId: number, memberId: number) => {
+    try {
+      await api.removeGroupMember(groupId, memberId);
+      await reloadGroups();
+    } catch (e) {
+      showToast(humanizeApiError(e));
     }
   };
 
@@ -318,6 +387,7 @@ export default function MiniAppShell() {
     description: string;
     sizesRaw: string;
     requiresColor: boolean;
+    groupIds: number[];
     photoFile: File | null;
     photoBlackFile: File | null;
   }) => {
@@ -342,6 +412,7 @@ export default function MiniAppShell() {
           description: data.description.trim(),
           requires_color: data.requiresColor,
           sizes,
+          group_ids: data.groupIds,
         });
         productId = editingProduct.id;
       } else {
@@ -350,6 +421,7 @@ export default function MiniAppShell() {
           description: data.description.trim(),
           requires_color: data.requiresColor,
           sizes,
+          group_ids: data.groupIds,
         });
         productId = created.id;
       }
@@ -410,12 +482,14 @@ export default function MiniAppShell() {
   const showBack =
     page === 'product' ||
     page === 'checkout' ||
-    page === 'admin-edit';
+    page === 'admin-edit' ||
+    page === 'admin-groups';
 
   const backPage: Page =
     page === 'product' ? 'catalog' :
     page === 'checkout' ? 'cart' :
-    page === 'admin-edit' ? 'admin' : 'catalog';
+    page === 'admin-edit' ? 'admin' :
+    page === 'admin-groups' ? 'admin' : 'catalog';
 
   return (
     <div className="mini-wrap">
@@ -496,13 +570,29 @@ export default function MiniAppShell() {
               setPage('admin-edit');
             }}
             onToggle={toggleProduct}
+            onOpenGroups={() => {
+              setPage('admin-groups');
+              window.scrollTo(0, 0);
+            }}
           />
         )}
 
         {page === 'admin-edit' && (
           <AdminEditPage
             product={editingProduct}
+            groups={adminGroups}
             onSave={data => saveProduct(data)}
+          />
+        )}
+
+        {page === 'admin-groups' && (
+          <AdminGroupsPage
+            groups={adminGroups}
+            loading={adminLoading}
+            onCreateGroup={createGroup}
+            onDeleteGroup={deleteGroup}
+            onAddMembers={addGroupMembers}
+            onRemoveMember={removeGroupMember}
           />
         )}
 
