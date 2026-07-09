@@ -77,16 +77,13 @@ async def global_exception_handler(request: Request, exc: Exception):
             pass
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
-CORS_ORIGINS = [
-    "https://web.telegram.org",
-    settings.app_base_url,
-    settings.webapp_url,
-]
-
+# Auth is a signed X-Telegram-Init-Data header (HMAC), never cookies, so a
+# wildcard origin is safe and — unlike an allow-list — never breaks when the
+# frontend's URL changes. The initData validation is the real security boundary.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin for origin in CORS_ORIGINS if origin],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -97,7 +94,7 @@ app.include_router(webapp_router)
 async def root_redirect():
     return RedirectResponse(url=settings.resolved_webapp_url)
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
