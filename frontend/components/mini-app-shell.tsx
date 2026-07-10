@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { CartResponse, CatalogProduct, Order, Recipient, ShopConfig, UserGroup } from '@/lib/api';
+import type { CartItem, CartResponse, CatalogProduct, Order, Recipient, ShopConfig, UserGroup } from '@/lib/api';
 import { buildApiClient } from '@/lib/api';
 import { getTelegramInitData, getTelegramWebApp, isOpenedInTelegram } from '@/lib/telegram';
 import { humanizeApiError, parseSizesInput } from '@/lib/validation';
@@ -80,6 +80,12 @@ export default function MiniAppShell() {
   const [successOrderId, setSuccessOrderId] = useState<number | null>(null);
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Mirror of `cart` read synchronously by optimistic handlers (state is async),
+  // plus per-item debounce timers + pending target quantities so a burst of
+  // +/- taps sends one request and can be flushed before checkout.
+  const cartRef = useRef<CartResponse>({ items: [], total: 0 });
+  const cartSyncTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const cartPending = useRef<Record<number, number>>({});
 
   const initData = useMemo(() => getTelegramInitData(), []);
   const api = useMemo(() => buildApiClient(initData), [initData]);
@@ -88,6 +94,12 @@ export default function MiniAppShell() {
     setToast(msg);
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(() => setToast(''), 2500);
+  }, []);
+
+  // Update ref and state together so the next tap sees the latest cart instantly
+  const applyCart = useCallback((next: CartResponse) => {
+    cartRef.current = next;
+    setCart(next);
   }, []);
 
   // ── Bootstrap ─────────────────────────────────────────────────────────────
@@ -115,7 +127,7 @@ export default function MiniAppShell() {
       try {
         const [catalogData, cartData] = await Promise.all([api.getCatalog(), api.getCart()]);
         setProducts(catalogData.products);
-        setCart(cartData);
+        applyCart(cartData);
 
         const urlPage = new URLSearchParams(window.location.search).get('page');
         if (urlPage === 'admin') {
@@ -138,12 +150,61 @@ export default function MiniAppShell() {
   // ── Cart badge update ─────────────────────────────────────────────────────
   const reloadCart = useCallback(async () => {
     try {
-      const data = await api.getCart();
-      setCart(data);
+      const server = await api.getCart();
+      const pending = cartPending.current;
+      if (Object.keys(pending).length === 0) {
+        applyCart(server);
+        return;
+      }
+      // Keep still-pending optimistic quantities on top of server truth, so a
+      // refetch never clobbers edits the user made but we haven't synced yet.
+      const items: CartItem[] = [];
+      for (const i of server.items) {
+        const pq = pending[i.id];
+        if (pq === undefined) items.push(i);
+        else if (pq >= 1) items.push({ ...i, quantity: pq, line_total: i.price * pq });
+        // pq < 1 → pending removal, omit
+      }
+      applyCart({ items, total: items.reduce((s, x) => s + x.line_total, 0) });
     } catch {
       // silent
     }
-  }, [api]);
+  }, [api, applyCart]);
+
+  const syncCartItem = useCallback(async (itemId: number, qty: number) => {
+    try {
+      if (qty < 1) await api.removeCartItem(itemId);
+      else await api.updateCartItem(itemId, qty);
+    } catch (e) {
+      showToast(humanizeApiError(e));
+      void reloadCart();
+    }
+  }, [api, showToast, reloadCart]);
+
+  // Debounced server sync for quantity changes: rapid taps collapse into one
+  // request carrying the final quantity, avoiding out-of-order overwrites.
+  const scheduleCartSync = useCallback((itemId: number, qty: number) => {
+    cartPending.current[itemId] = qty;
+    const timers = cartSyncTimers.current;
+    if (timers[itemId]) clearTimeout(timers[itemId]);
+    timers[itemId] = setTimeout(() => {
+      delete timers[itemId];
+      const target = cartPending.current[itemId];
+      delete cartPending.current[itemId];
+      if (target !== undefined) void syncCartItem(itemId, target);
+    }, 400);
+  }, [syncCartItem]);
+
+  // Send any pending quantity changes immediately and wait for them — the
+  // server must reflect the real quantities before checkout reads the cart.
+  const flushCartSyncs = useCallback(async () => {
+    const entries = Object.entries(cartPending.current);
+    Object.values(cartSyncTimers.current).forEach(clearTimeout);
+    cartSyncTimers.current = {};
+    cartPending.current = {};
+    if (entries.length === 0) return;
+    await Promise.all(entries.map(([id, qty]) => syncCartItem(Number(id), qty)));
+  }, [syncCartItem]);
 
   const cartCount = useMemo(
     () => cart.items.reduce((s, i) => s + i.quantity, 0),
@@ -207,42 +268,67 @@ export default function MiniAppShell() {
     if (!selectedProduct) return;
     try {
       await api.addToCart(selectedProduct.id, size, color, quantity);
-      await reloadCart();
       showToast(quantity > 1 ? `Додано в кошик · ${quantity} шт ✓` : 'Додано в кошик ✓');
+      void reloadCart(); // sync in background — don't make the button wait
     } catch (e) {
       showToast(humanizeApiError(e));
     }
   };
 
-  // ── Cart ──────────────────────────────────────────────────────────────────
-  const updateCartQty = async (itemId: number, qty: number) => {
-    try {
-      if (qty < 1) {
-        await api.removeCartItem(itemId);
-      } else {
-        await api.updateCartItem(itemId, qty);
-      }
-      await reloadCart();
-    } catch (e) {
-      showToast(humanizeApiError(e));
-    }
-  };
+  // ── Cart (optimistic) ───────────────────────────────────────────────────────
+  const changeCartQty = useCallback((itemId: number, delta: number) => {
+    const prev = cartRef.current;
+    const item = prev.items.find(i => i.id === itemId);
+    if (!item) return;
+    const newQty = Math.max(0, Math.min(99, item.quantity + delta));
+    if (newQty === item.quantity) return; // already at a bound
+    const nextItems = newQty < 1
+      ? prev.items.filter(i => i.id !== itemId)
+      : prev.items.map(i =>
+          i.id === itemId ? { ...i, quantity: newQty, line_total: i.price * newQty } : i,
+        );
+    const total = nextItems.reduce((s, i) => s + i.line_total, 0);
+    applyCart({ items: nextItems, total }); // instant
+    scheduleCartSync(itemId, newQty);
+  }, [applyCart, scheduleCartSync]);
 
-  const clearCart = async () => {
-    try {
-      await api.clearCart();
-      await reloadCart();
-      showToast('Кошик очищено');
-    } catch (e) {
-      showToast(humanizeApiError(e));
+  const removeCartLine = useCallback((itemId: number) => {
+    const timers = cartSyncTimers.current;
+    if (timers[itemId]) {
+      clearTimeout(timers[itemId]);
+      delete timers[itemId];
     }
-  };
+    delete cartPending.current[itemId];
+    const prev = cartRef.current;
+    const nextItems = prev.items.filter(i => i.id !== itemId);
+    applyCart({ items: nextItems, total: nextItems.reduce((s, i) => s + i.line_total, 0) });
+    api.removeCartItem(itemId).catch(e => {
+      showToast(humanizeApiError(e));
+      void reloadCart();
+    });
+  }, [api, applyCart, showToast, reloadCart]);
+
+  const clearCart = useCallback(() => {
+    Object.values(cartSyncTimers.current).forEach(clearTimeout);
+    cartSyncTimers.current = {};
+    cartPending.current = {};
+    applyCart({ items: [], total: 0 });
+    api.clearCart()
+      .then(() => showToast('Кошик очищено'))
+      .catch(e => {
+        showToast(humanizeApiError(e));
+        void reloadCart(); // restore actual server state (pending was cleared)
+      });
+  }, [api, applyCart, showToast, reloadCart]);
 
   // ── Checkout ──────────────────────────────────────────────────────────────
   const openCheckout = async () => {
     setCheckoutLoading(true);
     setPage('checkout');
     try {
+      // Push any pending quantity edits first, so the server cart the order is
+      // built from matches exactly what the user sees.
+      await flushCartSyncs();
       const [recData, cfgData, cartData] = await Promise.all([
         api.getRecipients(),
         api.getConfig(),
@@ -250,7 +336,7 @@ export default function MiniAppShell() {
       ]);
       setCheckoutRecipients(recData.recipients);
       setConfig(cfgData);
-      setCart(cartData);
+      applyCart(cartData);
     } catch (e) {
       showToast(humanizeApiError(e));
       setPage('cart');
@@ -530,7 +616,8 @@ export default function MiniAppShell() {
           <CartPage
             cart={cart}
             loading={false}
-            onUpdateQty={updateCartQty}
+            onChangeQty={changeCartQty}
+            onRemove={removeCartLine}
             onClear={clearCart}
             onCheckout={() => void openCheckout()}
           />

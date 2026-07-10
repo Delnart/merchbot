@@ -10,12 +10,13 @@ const MAX_QUANTITY = 99;
 interface CartPageProps {
   cart: CartResponse;
   loading: boolean;
-  onUpdateQty: (itemId: number, qty: number) => Promise<void>;
-  onClear: () => Promise<void>;
+  onChangeQty: (itemId: number, delta: number) => void;
+  onRemove: (itemId: number) => void;
+  onClear: () => void;
   onCheckout: () => void;
 }
 
-export default function CartPage({ cart, loading, onUpdateQty, onClear, onCheckout }: CartPageProps) {
+export default function CartPage({ cart, loading, onChangeQty, onRemove, onClear, onCheckout }: CartPageProps) {
   if (loading) return <Spinner />;
 
   if (!cart.items.length) {
@@ -76,7 +77,7 @@ export default function CartPage({ cart, loading, onUpdateQty, onClear, onChecko
                 <div className="qty-control">
                   <button
                     className="qty-btn"
-                    onClick={() => onUpdateQty(item.id, Math.min(MAX_QUANTITY, item.quantity - 1))}
+                    onClick={() => onChangeQty(item.id, -1)}
                     type="button"
                     aria-label="Зменшити"
                   >
@@ -85,7 +86,7 @@ export default function CartPage({ cart, loading, onUpdateQty, onClear, onChecko
                   <span className="qty-value">{item.quantity}</span>
                   <button
                     className="qty-btn"
-                    onClick={() => onUpdateQty(item.id, Math.min(MAX_QUANTITY, item.quantity + 1))}
+                    onClick={() => onChangeQty(item.id, 1)}
                     disabled={item.quantity >= MAX_QUANTITY}
                     type="button"
                     aria-label="Збільшити"
@@ -95,7 +96,7 @@ export default function CartPage({ cart, loading, onUpdateQty, onClear, onChecko
                 </div>
                 <button
                   className="remove-btn"
-                  onClick={() => onUpdateQty(item.id, 0)}
+                  onClick={() => onRemove(item.id)}
                   type="button"
                   aria-label="Видалити"
                 >
