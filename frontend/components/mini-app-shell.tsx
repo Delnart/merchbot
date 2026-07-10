@@ -69,10 +69,12 @@ export default function MiniAppShell() {
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   // Admin
   const [adminProducts, setAdminProducts] = useState<CatalogProduct[]>([]);
   const [adminLoading, setAdminLoading] = useState(false);
+  const [adminLoaded, setAdminLoaded] = useState(false);
   const [editingProduct, setEditingProduct] = useState<CatalogProduct | null>(null);
   const [adminGroups, setAdminGroups] = useState<UserGroup[]>([]);
 
@@ -251,14 +253,21 @@ export default function MiniAppShell() {
 
   // ── Product ───────────────────────────────────────────────────────────────
   const openProduct = async (id: number) => {
-    setProductLoading(true);
     setPage('product');
+    window.scrollTo(0, 0);
+    // The catalog list already carries everything the product page needs, so
+    // open instantly from it and just refresh in the background.
+    const cached = products.find(p => p.id === id) ?? null;
+    setSelectedProduct(cached);
+    setProductLoading(!cached);
     try {
       const p = await api.getProduct(id);
       setSelectedProduct(p);
     } catch (e) {
-      showToast(humanizeApiError(e));
-      setPage('catalog');
+      if (!cached) {
+        showToast(humanizeApiError(e));
+        setPage('catalog');
+      }
     } finally {
       setProductLoading(false);
     }
@@ -358,11 +367,14 @@ export default function MiniAppShell() {
 
   // ── Settings ──────────────────────────────────────────────────────────────
   const loadSettings = async () => {
-    setSettingsLoading(true);
+    // Spinner only on the first visit; later opens show cached data and
+    // refresh silently in the background (stale-while-revalidate).
+    if (!settingsLoaded) setSettingsLoading(true);
     try {
       const [recData, ordData] = await Promise.all([api.getRecipients(), api.getOrders()]);
       setRecipients(recData.recipients);
       setOrders(ordData.orders);
+      setSettingsLoaded(true);
     } catch (e) {
       showToast(humanizeApiError(e));
     } finally {
@@ -389,7 +401,7 @@ export default function MiniAppShell() {
 
   // ── Admin ─────────────────────────────────────────────────────────────────
   const loadAdmin = async () => {
-    setAdminLoading(true);
+    if (!adminLoaded) setAdminLoading(true);
     try {
       const [productsData, groupsData] = await Promise.all([
         api.getAdminProducts(),
@@ -397,6 +409,7 @@ export default function MiniAppShell() {
       ]);
       setAdminProducts(productsData.products);
       setAdminGroups(groupsData.groups);
+      setAdminLoaded(true);
     } catch (e) {
       showToast(humanizeApiError(e));
     } finally {
