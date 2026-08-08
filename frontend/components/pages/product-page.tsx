@@ -137,6 +137,19 @@ export default function ProductPage({ product, loading, onAddToCart }: ProductPa
         })}
       </div>
 
+      {(() => {
+        const selectedVariant = relevantVariants.find(v => v.size === selectedSize);
+        if (!selectedVariant) return null;
+        const available = selectedVariant.quantity !== null ? Math.max(0, selectedVariant.quantity - selectedVariant.reserved) : null;
+        return (
+          <div style={{ marginTop: 12, marginBottom: 16, fontSize: '0.9rem', color: 'var(--tg-theme-hint-color)', fontWeight: 500 }}>
+            {available !== null 
+              ? (available > 0 ? `🔥 В наявності: ${available} шт.` : '❌ Немає в наявності')
+              : '📦 Доступно за передзамовленням'}
+          </div>
+        );
+      })()}
+
       <p className="section-title">Кількість</p>
       <div
         className="qty-control"
