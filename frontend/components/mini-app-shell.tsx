@@ -495,7 +495,7 @@ export default function MiniAppShell() {
   const saveProduct = async (data: {
     title: string;
     description: string;
-    variantsRaw: string;
+    variants: {size: string, color: string, price: string, quantity: string}[];
     requiresColor: boolean;
     groupIds: number[];
     photoFile: File | null;
@@ -506,9 +506,9 @@ export default function MiniAppShell() {
       return;
     }
 
-    let variants;
+    let parsedVariants;
     try {
-      variants = parseVariantsInput(data.variantsRaw, data.requiresColor);
+      parsedVariants = parseVariantsInput(JSON.stringify(data.variants), data.requiresColor);
     } catch (e) {
       showToast(humanizeApiError(e));
       return;
@@ -521,7 +521,7 @@ export default function MiniAppShell() {
           title: data.title.trim(),
           description: data.description.trim(),
           requires_color: data.requiresColor,
-          variants,
+          variants: parsedVariants,
           group_ids: data.groupIds,
         });
         productId = editingProduct.id;
@@ -530,7 +530,7 @@ export default function MiniAppShell() {
           title: data.title.trim(),
           description: data.description.trim(),
           requires_color: data.requiresColor,
-          variants,
+          variants: parsedVariants,
           group_ids: data.groupIds,
         });
         productId = created.id;

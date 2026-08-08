@@ -6,42 +6,45 @@ export function isValidUaPhone(value: string): boolean {
 import { CatalogVariant } from './api';
 
 export function parseVariantsInput(input: string, requiresColor: boolean): Omit<CatalogVariant, 'reserved'>[] {
-  const output: Omit<CatalogVariant, 'reserved'>[] = [];
-  const chunks = input.split(',').map(c => c.trim()).filter(Boolean);
+  let chunks: any[];
+  try {
+    chunks = JSON.parse(input);
+  } catch (e) {
+    throw new Error('Некоректний формат варіантів');
+  }
 
-  if (chunks.length === 0) {
+  if (!Array.isArray(chunks) || chunks.length === 0) {
     throw new Error('Додайте хоча б один варіант');
   }
 
+  const output: Omit<CatalogVariant, 'reserved'>[] = [];
+
   for (const chunk of chunks) {
-    const parts = chunk.split(':').map(p => p.trim());
-    
-    if (requiresColor) {
-      if (parts.length < 3 || parts.length > 4) {
-        throw new Error('Невірний формат. Приклад: S:Білий:500:10');
-      }
-      const [size, color, rawPrice, rawQty] = parts;
-      if (!size) throw new Error('Назва розміру не може бути порожньою');
-      if (!color) throw new Error('Колір не може бути порожнім');
-      const price = Number.parseFloat(rawPrice);
-      if (!Number.isFinite(price) || price <= 0) throw new Error(`Некоректна ціна для ${size} ${color}`);
-      const qty = rawQty ? Number.parseInt(rawQty, 10) : null;
-      if (qty !== null && (Number.isNaN(qty) || qty < 0)) throw new Error(`Некоректна кількість для ${size} ${color}`);
-      
-      output.push({ size: size.toUpperCase(), color, price, quantity: qty });
-    } else {
-      if (parts.length < 2 || parts.length > 3) {
-        throw new Error('Невірний формат. Приклад: S:500:10');
-      }
-      const [size, rawPrice, rawQty] = parts;
-      if (!size) throw new Error('Назва розміру не може бути порожньою');
-      const price = Number.parseFloat(rawPrice);
-      if (!Number.isFinite(price) || price <= 0) throw new Error(`Некоректна ціна для ${size}`);
-      const qty = rawQty ? Number.parseInt(rawQty, 10) : null;
-      if (qty !== null && (Number.isNaN(qty) || qty < 0)) throw new Error(`Некоректна кількість для ${size}`);
-      
-      output.push({ size: size.toUpperCase(), color: null, price, quantity: qty });
+    const size = chunk.size?.trim();
+    if (!size) throw new Error('Назва розміру не може бути порожньою');
+
+    const color = chunk.color?.trim();
+    if (requiresColor && !color) {
+      throw new Error(`Колір не може бути порожнім для розміру ${size}`);
     }
+
+    const price = Number.parseFloat(chunk.price);
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new Error(`Некоректна ціна для розміру ${size}`);
+    }
+
+    const rawQty = chunk.quantity?.trim();
+    const qty = rawQty ? Number.parseInt(rawQty, 10) : null;
+    if (qty !== null && (Number.isNaN(qty) || qty < 0)) {
+      throw new Error(`Некоректна кількість для розміру ${size}`);
+    }
+
+    output.push({
+      size: size.toUpperCase(),
+      color: requiresColor ? color : null,
+      price,
+      quantity: qty,
+    });
   }
 
   return output;

@@ -10,7 +10,7 @@ interface AdminEditPageProps {
   onSave: (data: {
     title: string;
     description: string;
-    variantsRaw: string;
+    variants: {size: string, color: string, price: string, quantity: string}[];
     requiresColor: boolean;
     groupIds: number[];
     photoFile: File | null;
@@ -21,8 +21,13 @@ interface AdminEditPageProps {
 export default function AdminEditPage({ product, groups, onSave }: AdminEditPageProps) {
   const [title, setTitle] = useState(product?.title ?? '');
   const [description, setDescription] = useState(product?.description ?? '');
-  const [variantsRaw, setVariantsRaw] = useState(
-    product ? product.variants.map(v => `${v.size}${v.color ? ':' + v.color : ''}:${v.price}${v.quantity !== null ? ':' + v.quantity : ''}`).join(', ') : '',
+  const [variants, setVariants] = useState<{size: string, color: string, price: string, quantity: string}[]>(
+    product ? product.variants.map(v => ({
+      size: v.size,
+      color: v.color ?? '',
+      price: v.price.toString(),
+      quantity: v.quantity !== null ? v.quantity.toString() : ''
+    })) : [{ size: 'S', color: 'Білий', price: '500', quantity: '' }]
   );
   const [requiresColor, setRequiresColor] = useState(product?.requires_color ?? false);
   const [groupIds, setGroupIds] = useState<number[]>(product?.group_ids ?? []);
@@ -42,8 +47,13 @@ export default function AdminEditPage({ product, groups, onSave }: AdminEditPage
   useEffect(() => {
     setTitle(product?.title ?? '');
     setDescription(product?.description ?? '');
-    setVariantsRaw(
-      product ? product.variants.map(v => `${v.size}${v.color ? ':' + v.color : ''}:${v.price}${v.quantity !== null ? ':' + v.quantity : ''}`).join(', ') : '',
+    setVariants(
+      product ? product.variants.map(v => ({
+        size: v.size,
+        color: v.color ?? '',
+        price: v.price.toString(),
+        quantity: v.quantity !== null ? v.quantity.toString() : ''
+      })) : [{ size: 'S', color: 'Білий', price: '500', quantity: '' }]
     );
     setRequiresColor(product?.requires_color ?? false);
     setGroupIds(product?.group_ids ?? []);
@@ -73,7 +83,7 @@ export default function AdminEditPage({ product, groups, onSave }: AdminEditPage
     if (saving) return;
     setSaving(true);
     try {
-      await onSave({ title, description, variantsRaw, requiresColor, groupIds, photoFile, photoBlackFile });
+      await onSave({ title, description, variants, requiresColor, groupIds, photoFile, photoBlackFile });
     } finally {
       setSaving(false);
     }
@@ -102,18 +112,91 @@ export default function AdminEditPage({ product, groups, onSave }: AdminEditPage
       </div>
 
       <div className="form-group">
-        <label className="form-label">
-          {requiresColor ? 'Варіанти (Розмір:Колір:Ціна:Кількість)' : 'Варіанти (Розмір:Ціна:Кількість)'}
-        </label>
-        <input
-          className="form-input"
-          placeholder={requiresColor ? 'S:Білий:500:10, M:Чорний:550:5' : 'S:500:10, M:550:5'}
-          value={variantsRaw}
-          onChange={e => setVariantsRaw(e.target.value)}
-        />
-        <div style={{ fontSize: '0.8rem', opacity: 0.6, marginTop: 4 }}>
-          Якщо кількість не обмежена, залишіть поле порожнім (напр. S:Білий:500)
+        <label className="form-label" style={{ marginBottom: 12 }}>Варіанти товару</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {variants.map((v, idx) => (
+            <div key={idx} className="card" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: 4 }}>Розмір</label>
+                  <input
+                    className="form-input"
+                    value={v.size}
+                    onChange={e => {
+                      const newV = [...variants];
+                      newV[idx].size = e.target.value;
+                      setVariants(newV);
+                    }}
+                    placeholder="S"
+                  />
+                </div>
+                {requiresColor && (
+                  <div style={{ flex: 1 }}>
+                    <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: 4 }}>Колір</label>
+                    <input
+                      className="form-input"
+                      value={v.color}
+                      onChange={e => {
+                        const newV = [...variants];
+                        newV[idx].color = e.target.value;
+                        setVariants(newV);
+                      }}
+                      placeholder="Білий"
+                    />
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: 4 }}>Ціна (грн)</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    value={v.price}
+                    onChange={e => {
+                      const newV = [...variants];
+                      newV[idx].price = e.target.value;
+                      setVariants(newV);
+                    }}
+                    placeholder="500"
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: 4 }}>Залишок (шт)</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    value={v.quantity}
+                    onChange={e => {
+                      const newV = [...variants];
+                      newV[idx].quantity = e.target.value;
+                      setVariants(newV);
+                    }}
+                    placeholder="Безлім"
+                  />
+                </div>
+              </div>
+              {variants.length > 1 && (
+                <button
+                  className="btn-secondary btn-danger btn-small"
+                  onClick={() => setVariants(variants.filter((_, i) => i !== idx))}
+                  type="button"
+                  style={{ alignSelf: 'flex-end', marginTop: 4 }}
+                >
+                  Видалити варіант
+                </button>
+              )}
+            </div>
+          ))}
         </div>
+        <button
+          className="btn-secondary"
+          onClick={() => setVariants([...variants, { size: '', color: requiresColor ? 'Білий' : '', price: '500', quantity: '' }])}
+          type="button"
+          style={{ marginTop: 12 }}
+        >
+          + Додати варіант
+        </button>
       </div>
 
       <label className="checkbox-row" style={{ marginBottom: 16 }}>
@@ -215,7 +298,7 @@ export default function AdminEditPage({ product, groups, onSave }: AdminEditPage
       <button
         className="btn-primary"
         onClick={handleSave}
-        disabled={saving || !title.trim() || !description.trim() || !variantsRaw.trim()}
+        disabled={saving || !title.trim() || !description.trim() || variants.length === 0}
         type="button"
         style={{ marginTop: 4 }}
       >
