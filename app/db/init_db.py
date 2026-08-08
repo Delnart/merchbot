@@ -13,6 +13,9 @@ _PG_MIGRATIONS = [
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS photo_black_file_id VARCHAR(255)",
     "ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS color VARCHAR(20)",
     "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS color VARCHAR(20)",
+    "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS checkout_expires_at TIMESTAMP WITH TIME ZONE",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pickup_slot_id INTEGER",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS needs_individual_pickup BOOLEAN DEFAULT FALSE",
 ]
 
 _SQLITE_MIGRATIONS = [
@@ -23,6 +26,9 @@ _SQLITE_MIGRATIONS = [
     "ALTER TABLE products ADD COLUMN photo_black_file_id VARCHAR(255)",
     "ALTER TABLE cart_items ADD COLUMN color VARCHAR(20)",
     "ALTER TABLE order_items ADD COLUMN color VARCHAR(20)",
+    "ALTER TABLE user_profiles ADD COLUMN checkout_expires_at TIMESTAMP",
+    "ALTER TABLE orders ADD COLUMN pickup_slot_id INTEGER",
+    "ALTER TABLE orders ADD COLUMN needs_individual_pickup BOOLEAN DEFAULT FALSE",
 ]
 
 
