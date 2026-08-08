@@ -76,3 +76,19 @@ async def init_db() -> None:
                     await conn.execute(text(stmt))
             except Exception:
                 pass
+                
+    # Migrate product_sizes to product_variants (for both Postgres and SQLite)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("""
+                INSERT INTO product_variants (product_id, size, price, stock_quantity)
+                SELECT ps.product_id, ps.size, ps.price, NULL
+                FROM product_sizes ps
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM product_variants pv 
+                    WHERE pv.product_id = ps.product_id AND pv.size = ps.size
+                )
+            """))
+    except Exception:
+        pass
+
