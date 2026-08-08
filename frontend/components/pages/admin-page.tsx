@@ -12,9 +12,10 @@ interface AdminPageProps {
   onEdit: (p: CatalogProduct) => void;
   onToggle: (id: number) => Promise<void>;
   onOpenGroups: () => void;
+  onOpenPickupSlots: () => void;
 }
 
-export default function AdminPage({ products, loading, onCreate, onEdit, onToggle, onOpenGroups }: AdminPageProps) {
+export default function AdminPage({ products, loading, onCreate, onEdit, onToggle, onOpenGroups, onOpenPickupSlots }: AdminPageProps) {
   if (loading) return <Spinner />;
 
   return (
@@ -22,8 +23,11 @@ export default function AdminPage({ products, loading, onCreate, onEdit, onToggl
       <button className="btn-primary" onClick={onCreate} type="button" style={{ marginBottom: 8 }}>
         + Додати товар
       </button>
-      <button className="btn-secondary" onClick={onOpenGroups} type="button" style={{ marginBottom: 16 }}>
+      <button className="btn-secondary" onClick={onOpenGroups} type="button" style={{ marginBottom: 8 }}>
         👥 Групи користувачів
+      </button>
+      <button className="btn-secondary" onClick={onOpenPickupSlots} type="button" style={{ marginBottom: 16 }}>
+        🗓 Слоти видачі
       </button>
 
       {products.length === 0 ? (
@@ -57,8 +61,8 @@ export default function AdminPage({ products, loading, onCreate, onEdit, onToggl
 
                 <div className="admin-product-info">
                   <div className="admin-product-title">{p.title}</div>
-                  <div className="admin-product-sizes">
-                    {p.sizes.map(s => `${s.size}: ${s.price}₴`).join(', ')}
+                  <div className="admin-product-variants">
+                    {p.variants.map(v => `${v.size}${v.color ? ' ' + v.color : ''}: ${v.price}₴${v.quantity !== null ? ` (${v.quantity} шт)` : ''}`).join(', ')}
                   </div>
                 </div>
 

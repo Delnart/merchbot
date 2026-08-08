@@ -10,7 +10,7 @@ import traceback
 
 from app.bot.keyboards import (
     admin_main_keyboard, main_menu_keyboard, persistent_main_keyboard,
-    order_status_keyboard,
+    order_status_keyboard, user_pickup_keyboard
 )
 from app.bot.handlers.support import router as support_router
 from app.bot.states import AdminConfigState, FeedbackState
@@ -299,12 +299,14 @@ async def order_status_handler(callback: CallbackQuery, bot: Bot) -> None:
             order_total = float(order.total_amount)
             order_phone = order.phone
             order_recipient = order.recipient_name or ""
+            order_delivery_method = order.delivery_method
             order_delivery = f"{order.delivery_method.value if order.delivery_method else ''} {order.address}"
             await session.refresh(order, attribute_names=["items"])
             items_str = "; ".join([f"{i.title} {i.size}{' ' + i.color if i.color else ''} x{i.quantity}" for i in order.items])
 
     status_translations = {
         OrderStatus.in_process: "🔄 В роботі",
+        OrderStatus.ready_for_pickup: "📦 Готове до видачі",
         OrderStatus.completed: "✅ Виконано та відправлено",
         OrderStatus.cancelled: "❌ Скасовано",
     }
@@ -319,6 +321,8 @@ async def order_status_handler(callback: CallbackQuery, bot: Bot) -> None:
         lines = [l for l in lines if not l.startswith("👨‍💻")]
         if status == OrderStatus.in_process:
             lines.append(f"👨‍💻 Взяв в роботу: {admin_name}")
+        elif status == OrderStatus.ready_for_pickup:
+            lines.append(f"👨‍💻 Готове: {admin_name}")
         elif status == OrderStatus.completed and db_admin_name:
             lines.append(f"👨‍💻 Виконав: {db_admin_name}")
         new_caption = "\n".join(lines)
@@ -346,15 +350,24 @@ async def order_status_handler(callback: CallbackQuery, bot: Bot) -> None:
 
     user_notifications = {
         OrderStatus.in_process: "🔄 Ваше замовлення взяли в роботу!",
+        OrderStatus.ready_for_pickup: "📦 Ваше замовлення готове! Будь ласка, оберіть час видачі.",
         OrderStatus.completed: "✅ Ваше замовлення виконано та відправлено!",
         OrderStatus.cancelled: "❌ Ваше замовлення скасовано. Зв'яжіться з нами для уточнення деталей.",
     }
     notif = user_notifications.get(status)
     if notif:
         try:
+            from app.db.models import DeliveryMethod
+            kwargs = {}
+            if status == OrderStatus.ready_for_pickup and order_delivery_method in [DeliveryMethod.campus, DeliveryMethod.dayf, DeliveryMethod.later_campus]:
+                kwargs["reply_markup"] = user_pickup_keyboard(order_id)
+            elif status == OrderStatus.ready_for_pickup:
+                notif = "📦 Ваше замовлення готове до видачі / відправки!"
+                
             await bot.send_message(
                 user_id,
                 f"🔔 Статус замовлення #{order_id} змінено!\n\n{notif}",
+                **kwargs
             )
         except Exception:
             pass

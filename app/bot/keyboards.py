@@ -40,6 +40,12 @@ def order_status_keyboard(order_id: int, current_status: OrderStatus, admin_name
     elif current_status == OrderStatus.in_process:
         if admin_name:
             b.button(text=f"👨‍💻 В роботі ({admin_name})", callback_data="ignore")
+        b.button(text="📦 Готове до видачі", callback_data=f"ostatus:{order_id}:ready_for_pickup")
+        b.button(text="✅ Виконано", callback_data=f"ostatus:{order_id}:completed")
+        b.button(text="❌ Скасувати", callback_data=f"ostatus:{order_id}:cancelled")
+    elif current_status == OrderStatus.ready_for_pickup:
+        if admin_name:
+            b.button(text=f"📦 Готове ({admin_name})", callback_data="ignore")
         b.button(text="✅ Виконано", callback_data=f"ostatus:{order_id}:completed")
         b.button(text="❌ Скасувати", callback_data=f"ostatus:{order_id}:cancelled")
     elif current_status == OrderStatus.completed:
@@ -47,5 +53,12 @@ def order_status_keyboard(order_id: int, current_status: OrderStatus, admin_name
     elif current_status == OrderStatus.cancelled:
         b.button(text="❌ Замовлення скасовано", callback_data="ignore")
         
+    b.adjust(1)
+    return b.as_markup()
+
+def user_pickup_keyboard(order_id: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    webapp_url = f"{settings.resolved_webapp_url}?page=pickup&order_id={order_id}"
+    b.button(text="🗓 Обрати час видачі", web_app=WebAppInfo(url=webapp_url))
     b.adjust(1)
     return b.as_markup()

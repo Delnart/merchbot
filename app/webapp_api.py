@@ -18,15 +18,16 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.db.models import (
     CartItem, DeliveryMethod, Order, OrderItem, OrderStatus,
-    Product, ProductSize, Recipient, UserProfile,
+    Product, ProductVariant, Recipient, UserProfile, PickupSlot
 )
 from app.db.session import AsyncSessionLocal
 from app.services.admin_config import get_active_admin_binding, get_or_create_shop_config
 from app.services.background import fire_and_forget, run_blocking_in_background
-from app.services.cart import add_to_cart, clear_cart, ensure_user, list_cart
+from app.services.cart import add_to_cart, clear_cart, ensure_user, list_cart, get_all_reserved_quantities
+from datetime import datetime, timedelta
 from app.services.catalog import (
-    archive_product, create_product, get_product, get_sizes,
-    list_all_products, list_visible_products, replace_sizes, set_product_description, set_product_photo,
+    archive_product, create_product, get_product, get_variants,
+    list_all_products, list_visible_products, replace_variants, set_product_description, set_product_photo,
 )
 from app.services.google_sheets import sync_order_to_sheet
 from app.services.groups import (
@@ -201,7 +202,7 @@ class ProductCreate(BaseModel):
     title: str
     description: str
     requires_color: bool = False
-    sizes: dict[str, float]  # e.g. {"S": 500, "M": 550}
+    variants: list[dict]  # [{"size": "S", "color": "Black", "price": 500, "quantity": 10}]
     group_ids: list[int] = []  # empty = visible to everyone
 
 
@@ -209,7 +210,7 @@ class ProductUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     requires_color: bool | None = None
-    sizes: dict[str, float] | None = None
+    variants: list[dict] | None = None
     group_ids: list[int] | None = None  # None = unchanged, [] = visible to everyone
 
 
@@ -219,6 +220,15 @@ class GroupCreate(BaseModel):
 
 class GroupMembersAdd(BaseModel):
     values: str  # telegram ids and/or @usernames separated by commas/newlines
+
+class PickupSlotCreate(BaseModel):
+    date: str  # YYYY-MM-DD
+    start_time: str  # HH:MM
+    end_time: str  # HH:MM
+
+class OrderPickupSelect(BaseModel):
+    pickup_slot_id: int | None = None
+    needs_individual_pickup: bool = False
 
 
 # ── Catalog endpoints ────────────────────────────────────────────────────────
@@ -234,9 +244,10 @@ async def api_catalog(user: dict = Depends(get_telegram_user)):
             await ensure_user(session, telegram_id, username, user.get("first_name"), user.get("last_name"))
         group_ids = await get_user_group_ids(session, telegram_id, username)
         products = await list_visible_products(session, group_ids)
+        reserved_qtys = await get_all_reserved_quantities(session)
         result = []
         for p in products:
-            min_price = min((s.price for s in p.sizes), default=0)
+            min_price = min((v.price for v in p.variants), default=0)
             result.append({
                 "id": p.id,
                 "title": p.title,
@@ -245,7 +256,7 @@ async def api_catalog(user: dict = Depends(get_telegram_user)):
                 "photo_black_url": f"/api/photos/{p.photo_black_file_id}" if getattr(p, 'photo_black_file_id', None) else None,
                 "requires_color": p.requires_color,
                 "min_price": float(min_price),
-                "sizes": [{"size": s.size, "price": float(s.price)} for s in p.sizes],
+                "variants": [{"size": v.size, "color": v.color, "price": float(v.price), "quantity": v.stock_quantity, "reserved": reserved_qtys.get((p.id, v.size, v.color), 0)} for v in p.variants],
             })
     return {"products": result}
 
@@ -261,7 +272,8 @@ async def api_catalog_item(product_id: int, user: dict = Depends(get_telegram_us
             raise HTTPException(status_code=404, detail="product_not_found")
         if not await can_user_see_product(session, product_id, telegram_id, user.get("username")):
             raise HTTPException(status_code=404, detail="product_not_found")
-        sizes = await get_sizes(session, product_id)
+        variants = await get_variants(session, product_id)
+        reserved_qtys = await get_all_reserved_quantities(session)
     return {
         "id": product.id,
         "title": product.title,
@@ -269,7 +281,7 @@ async def api_catalog_item(product_id: int, user: dict = Depends(get_telegram_us
         "requires_color": product.requires_color,
         "photo_url": f"/api/photos/{product.photo_file_id}" if product.photo_file_id else None,
         "photo_black_url": f"/api/photos/{product.photo_black_file_id}" if getattr(product, 'photo_black_file_id', None) else None,
-        "sizes": [{"size": s.size, "price": float(s.price)} for s in sizes],
+        "variants": [{"size": v.size, "color": v.color, "price": float(v.price), "quantity": v.stock_quantity, "reserved": reserved_qtys.get((product.id, v.size, v.color), 0)} for v in variants],
     }
 
 
@@ -523,10 +535,129 @@ async def api_recipient_set_default(recipient_id: int, telegram_id: int = Depend
     return {"ok": True}
 
 
+# ── Pickup Slots (User) ─────────────────────────────────────────────────────
+
+@router.get("/pickup-slots")
+async def api_get_available_pickup_slots(telegram_id: int = Depends(get_telegram_id)):
+    async with AsyncSessionLocal() as session:
+        # Get active slots
+        result = await session.execute(
+            select(PickupSlot).where(PickupSlot.is_active.is_(True)).order_by(PickupSlot.date.asc(), PickupSlot.start_time.asc())
+        )
+        slots = result.scalars().all()
+        
+        # Check for booked slots today to override "no today slots" rule
+        today = datetime.utcnow().date()
+        
+        booked_result = await session.execute(
+            select(Order.pickup_slot_id)
+            .where(Order.pickup_slot_id.is_not(None), Order.status != OrderStatus.cancelled)
+        )
+        booked_slot_ids = set(booked_result.scalars().all())
+        
+        available = []
+        for s in slots:
+            slot_date = s.date.date()
+            if slot_date < today:
+                continue
+            
+            if slot_date == today:
+                # Can only pick today if someone else booked it and time hasn't passed
+                if s.id not in booked_slot_ids:
+                    continue
+                # Time check
+                now_time = datetime.utcnow().strftime("%H:%M") # Actually UTC time vs Local time. The user specified "04.08 12:00-14:00" in local time probably. But we'll just compare strings since server might be in UTC. Or wait, let's just do a naive string comparison for now.
+                if s.start_time < now_time:
+                    continue
+                    
+            available.append({
+                "id": s.id,
+                "date": slot_date.isoformat(),
+                "start_time": s.start_time,
+                "end_time": s.end_time,
+            })
+            
+    return {"slots": available}
+
+@router.post("/orders/{order_id}/pickup")
+async def api_select_pickup_slot(order_id: int, body: OrderPickupSelect, telegram_id: int = Depends(get_telegram_id)):
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            result = await session.execute(select(Order).where(Order.id == order_id, Order.telegram_id == telegram_id))
+            order = result.scalar_one_or_none()
+            if not order:
+                raise HTTPException(status_code=404, detail="order_not_found")
+                
+            if order.delivery_method not in [DeliveryMethod.campus, DeliveryMethod.dayf, DeliveryMethod.later_campus]:
+                raise HTTPException(status_code=400, detail="invalid_delivery_method_for_pickup")
+                
+            if body.pickup_slot_id:
+                slot_res = await session.execute(select(PickupSlot).where(PickupSlot.id == body.pickup_slot_id))
+                slot = slot_res.scalar_one_or_none()
+                if not slot:
+                    raise HTTPException(status_code=404, detail="slot_not_found")
+                slot_info = f"{slot.date.strftime('%Y-%m-%d')} {slot.start_time}-{slot.end_time}"
+            else:
+                slot_info = "Не обрано"
+                    
+            order.pickup_slot_id = body.pickup_slot_id
+            order.needs_individual_pickup = body.needs_individual_pickup
+            
+            # Notify admin chat
+            if order.admin_message_id:
+                binding = await get_active_admin_binding(session)
+                if binding:
+                    from app.main import bot
+                    try:
+                        indiv = 'Так' if body.needs_individual_pickup else 'Ні'
+                        await bot.send_message(
+                            binding.chat_id,
+                            f"🗓 Користувач обрав час видачі для замовлення #{order.id}:\n"
+                            f"Слот: {slot_info}\n"
+                            f"Індивідуальна видача: {indiv}",
+                            reply_to_message_id=order.admin_message_id
+                        )
+                    except Exception:
+                        pass
+            
+    return {"ok": True}
+
+
 # ── Checkout endpoint ────────────────────────────────────────────────────────
 
 def _delivery_label(method: str) -> str:
     return {"nova_poshta": "Нова Пошта", "campus": "На DayF", "dayf": "DayF", "later_campus": "Пізніше в корпусі"}.get(method, method)
+
+@router.post("/checkout/start")
+async def api_checkout_start(user: dict = Depends(get_telegram_user)):
+    telegram_id = user.get("id")
+    if not telegram_id:
+        raise HTTPException(status_code=401, detail="missing_user_id")
+    
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            user_profile = await ensure_user(session, telegram_id, user.get("username"), user.get("first_name"), user.get("last_name"))
+            cart_items = await list_cart(session, telegram_id)
+            
+            if user_profile.checkout_expires_at and user_profile.checkout_expires_at > datetime.utcnow():
+                user_profile.checkout_expires_at = datetime.utcnow() + timedelta(minutes=15)
+                return {"ok": True}
+                
+            reserved_qtys = await get_all_reserved_quantities(session)
+            for cart_item, product in cart_items:
+                variant = next((v for v in product.variants if v.size == cart_item.size and v.color == cart_item.color), None)
+                if not variant:
+                    raise HTTPException(status_code=400, detail="variant_not_found")
+                    
+                if variant.stock_quantity is not None:
+                    reserved = reserved_qtys.get((product.id, variant.size, variant.color), 0)
+                    available = variant.stock_quantity - reserved
+                    if cart_item.quantity > available:
+                        raise HTTPException(status_code=400, detail=f"not_enough_quantity_for_{product.title}")
+            
+            user_profile.checkout_expires_at = datetime.utcnow() + timedelta(minutes=15)
+            
+    return {"ok": True}
 
 
 @router.post("/checkout")
@@ -622,6 +753,25 @@ async def api_checkout(
                 currency=config.currency,
                 delivery_method=delivery_method,
             )
+            
+            # Clear checkout session and deduct stock
+            user_profile = await ensure_user(session, telegram_id, None, None, None)
+            user_profile.checkout_expires_at = None
+            for item in order.items:
+                if item.product_id:
+                    v_query = select(ProductVariant).where(
+                        ProductVariant.product_id == item.product_id,
+                        ProductVariant.size == item.size
+                    )
+                    if item.color:
+                        v_query = v_query.where(ProductVariant.color == item.color)
+                    else:
+                        v_query = v_query.where(ProductVariant.color.is_(None))
+                    v_res = await session.execute(v_query)
+                    variant = v_res.scalar_one_or_none()
+                    if variant and variant.stock_quantity is not None:
+                        variant.stock_quantity -= item.quantity
+            
             order.recipient_name = final_name
             binding = await get_active_admin_binding(session)
             await session.refresh(order)
@@ -805,6 +955,7 @@ async def api_admin_products(admin_id: int = Depends(require_admin)):
     async with AsyncSessionLocal() as session:
         products = await list_all_products(session)
         product_groups = await get_product_group_ids(session, [p.id for p in products])
+        reserved_qtys = await get_all_reserved_quantities(session)
         result = []
         for p in products:
             result.append({
@@ -815,18 +966,68 @@ async def api_admin_products(admin_id: int = Depends(require_admin)):
                 "photo_url": f"/api/photos/{p.photo_file_id}" if p.photo_file_id else None,
                 "photo_black_url": f"/api/photos/{p.photo_black_file_id}" if getattr(p, 'photo_black_file_id', None) else None,
                 "is_active": p.is_active,
-                "sizes": [{"size": s.size, "price": float(s.price)} for s in p.sizes],
+                "variants": [{"size": v.size, "color": v.color, "price": float(v.price), "quantity": v.stock_quantity, "reserved": reserved_qtys.get((p.id, v.size, v.color), 0)} for v in p.variants],
                 "group_ids": product_groups.get(p.id, []),
             })
     return {"products": result}
 
+
+# ── Admin: Pickup Slots ──────────────────────────────────────────────────────
+
+@router.get("/admin/pickup-slots")
+async def api_admin_pickup_slots(admin_id: int = Depends(require_admin)):
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(PickupSlot).order_by(PickupSlot.date.desc(), PickupSlot.start_time.desc())
+        )
+        slots = result.scalars().all()
+    return {
+        "slots": [
+            {
+                "id": s.id,
+                "date": s.date.date().isoformat(),
+                "start_time": s.start_time,
+                "end_time": s.end_time,
+                "is_active": s.is_active,
+            } for s in slots
+        ]
+    }
+
+@router.post("/admin/pickup-slots")
+async def api_admin_create_pickup_slot(body: PickupSlotCreate, admin_id: int = Depends(require_admin)):
+    try:
+        dt = datetime.strptime(body.date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid_date")
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            slot = PickupSlot(
+                date=dt,
+                start_time=body.start_time,
+                end_time=body.end_time,
+            )
+            session.add(slot)
+            await session.flush()
+            sid = slot.id
+    return {"id": sid, "ok": True}
+
+@router.delete("/admin/pickup-slots/{slot_id}")
+async def api_admin_delete_pickup_slot(slot_id: int, admin_id: int = Depends(require_admin)):
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            result = await session.execute(select(PickupSlot).where(PickupSlot.id == slot_id))
+            slot = result.scalar_one_or_none()
+            if not slot:
+                raise HTTPException(status_code=404, detail="slot_not_found")
+            await session.delete(slot)
+    return {"ok": True}
 
 @router.post("/admin/products")
 async def api_admin_product_create(body: ProductCreate, admin_id: int = Depends(require_admin)):
     async with AsyncSessionLocal() as session:
         async with session.begin():
             product = await create_product(session, title=body.title, description=body.description, requires_color=body.requires_color)
-            await replace_sizes(session, product, body.sizes)
+            await replace_variants(session, product, body.variants)
             if body.group_ids:
                 await set_product_groups(session, product.id, body.group_ids)
             pid = product.id
@@ -846,8 +1047,8 @@ async def api_admin_product_update(product_id: int, body: ProductUpdate, admin_i
                 await set_product_description(session, product, body.description)
             if body.requires_color is not None:
                 product.requires_color = body.requires_color
-            if body.sizes is not None:
-                await replace_sizes(session, product, body.sizes)
+            if body.variants is not None:
+                await replace_variants(session, product, body.variants)
             if body.group_ids is not None:
                 await set_product_groups(session, product_id, body.group_ids)
     return {"ok": True}

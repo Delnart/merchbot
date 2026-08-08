@@ -21,8 +21,14 @@ export default function ProductPage({ product, loading, onAddToCart }: ProductPa
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
-    if (product) {
-      setSelectedSize(product.sizes[0]?.size ?? '');
+    if (product && product.variants.length > 0) {
+      const initialColor = product.requires_color ? (product.variants[0].color ?? 'Білий') : 'Білий';
+      const relevantVariants = product.requires_color
+        ? product.variants.filter(v => v.color === initialColor)
+        : product.variants;
+      
+      setSelectedSize(relevantVariants[0]?.size ?? '');
+      setSelectedColor(initialColor as 'Білий' | 'Чорний');
       setSelectedColor('Білий');
       setQuantity(1);
     }
@@ -37,7 +43,14 @@ export default function ProductPage({ product, loading, onAddToCart }: ProductPa
       : product.photo_url;
   const resolvedPhotoUrl = resolveMediaUrl(photoUrl);
 
-  const selectedPrice = product.sizes.find(s => s.size === selectedSize)?.price ?? 0;
+  const colors = Array.from(new Set(product.variants.map(v => v.color).filter(Boolean))) as ('Білий' | 'Чорний')[];
+  const relevantVariants = product.requires_color
+    ? product.variants.filter(v => v.color === selectedColor)
+    : product.variants;
+
+  const selectedVariant = relevantVariants.find(v => v.size === selectedSize);
+  const selectedPrice = selectedVariant?.price ?? 0;
+  const maxAvailable = selectedVariant?.quantity !== null ? Math.max(0, (selectedVariant?.quantity ?? 0) - (selectedVariant?.reserved ?? 0)) : MAX_QUANTITY;
 
   const handleAdd = async () => {
     if (!selectedSize) return;
@@ -72,33 +85,56 @@ export default function ProductPage({ product, loading, onAddToCart }: ProductPa
         <>
           <p className="section-title">Оберіть колір</p>
           <div className="size-selector">
-            {(['Білий', 'Чорний'] as const).map(color => (
+            {colors.length > 0 ? colors.map(color => (
               <button
                 key={color}
                 className={`size-btn ${selectedColor === color ? 'selected' : ''}`}
-                onClick={() => setSelectedColor(color)}
+                onClick={() => {
+                  setSelectedColor(color);
+                  const newRelevant = product.variants.filter(v => v.color === color);
+                  if (newRelevant.length > 0 && !newRelevant.find(v => v.size === selectedSize)) {
+                    setSelectedSize(newRelevant[0].size);
+                  }
+                }}
                 type="button"
               >
                 <span className="size-label">{color}</span>
               </button>
-            ))}
+            )) : <span className="size-label">Немає варіантів кольору</span>}
           </div>
         </>
       )}
 
       <p className="section-title">Оберіть розмір</p>
       <div className="size-selector">
-        {product.sizes.map(s => (
-          <button
-            key={s.size}
-            className={`size-btn ${selectedSize === s.size ? 'selected' : ''}`}
-            onClick={() => setSelectedSize(s.size)}
-            type="button"
-          >
-            <span className="size-label">{s.size}</span>
-            <span className="size-price">{s.price} грн</span>
-          </button>
-        ))}
+        {relevantVariants.map(v => {
+          const available = v.quantity !== null ? Math.max(0, v.quantity - v.reserved) : null;
+          const isOutOfStock = available === 0;
+          return (
+            <button
+              key={v.size}
+              className={`size-btn ${selectedSize === v.size ? 'selected' : ''} ${isOutOfStock ? 'out-of-stock' : ''}`}
+              onClick={() => {
+                if (!isOutOfStock) setSelectedSize(v.size);
+              }}
+              type="button"
+              disabled={isOutOfStock}
+              style={isOutOfStock ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+            >
+              <span className="size-label">{v.size}</span>
+              <span className="size-price">{v.price} грн</span>
+              {available !== null ? (
+                <span className="size-qty" style={{ fontSize: '0.7rem', opacity: 0.8 }}>
+                  {isOutOfStock ? 'Немає в наявності' : `${available} шт`}
+                </span>
+              ) : (
+                <span className="size-qty" style={{ fontSize: '0.7rem', opacity: 0.8 }}>
+                  Передзамовлення
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <p className="section-title">Кількість</p>
@@ -118,8 +154,8 @@ export default function ProductPage({ product, loading, onAddToCart }: ProductPa
         <span className="qty-value">{quantity}</span>
         <button
           className="qty-btn"
-          onClick={() => setQuantity(q => Math.min(MAX_QUANTITY, q + 1))}
-          disabled={quantity >= MAX_QUANTITY}
+          onClick={() => setQuantity(q => Math.min(maxAvailable, q + 1))}
+          disabled={quantity >= maxAvailable}
           type="button"
           aria-label="Збільшити кількість"
         >
@@ -130,7 +166,7 @@ export default function ProductPage({ product, loading, onAddToCart }: ProductPa
       <button
         className="btn-primary"
         onClick={handleAdd}
-        disabled={!selectedSize || adding}
+        disabled={!selectedSize || adding || maxAvailable === 0}
         type="button"
       >
         {adding

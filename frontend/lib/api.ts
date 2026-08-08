@@ -1,8 +1,11 @@
 // ── Types ─────────────────────────────────────────────────────────────────
 
-export type CatalogSize = {
+export type CatalogVariant = {
   size: string;
+  color: string | null;
   price: number;
+  quantity: number | null;
+  reserved: number;
 };
 
 export type CatalogProduct = {
@@ -13,7 +16,7 @@ export type CatalogProduct = {
   photo_black_url: string | null;
   requires_color: boolean;
   min_price: number;
-  sizes: CatalogSize[];
+  variants: CatalogVariant[];
   is_active?: boolean;
   group_ids?: number[];
 };
@@ -68,7 +71,15 @@ export type ShopConfig = {
   mono_jar_url: string;
   card_number: string | null;
   is_dayf_delivery_enabled: boolean;
-};
+}
+
+export type PickupSlot = {
+  id: number;
+  date: string;
+  start_time: string;
+  end_time: string;
+  is_active?: boolean;
+};;
 
 // ── API Client ────────────────────────────────────────────────────────────
 
@@ -195,6 +206,10 @@ class ApiClient {
   }
 
   // ── Checkout ──────────────────────────────────────────────────────────────
+  startCheckout(): Promise<{ ok: boolean }> {
+    return this.request('/api/checkout/start', { method: 'POST' });
+  }
+
   checkout(formData: FormData): Promise<{ ok: boolean; order_id: number }> {
     return this.request('/api/checkout', { method: 'POST', body: formData });
   }
@@ -212,7 +227,7 @@ class ApiClient {
     title: string;
     description: string;
     requires_color: boolean;
-    sizes: Record<string, number>;
+    variants: Omit<CatalogVariant, 'reserved'>[];
     group_ids?: number[];
   }): Promise<{ id: number; ok: boolean }> {
     return this.request('/api/admin/products', {
@@ -228,7 +243,7 @@ class ApiClient {
       title: string;
       description: string;
       requires_color: boolean;
-      sizes: Record<string, number>;
+      variants: Omit<CatalogVariant, 'reserved'>[];
       group_ids?: number[];
     },
   ): Promise<{ ok: boolean }> {
@@ -281,6 +296,35 @@ class ApiClient {
 
   toggleProduct(id: number): Promise<{ ok: boolean; is_active: boolean }> {
     return this.request(`/api/admin/products/${id}/toggle`, { method: 'POST' });
+  }
+
+  // ── Pickup Slots ──────────────────────────────────────────────────────────
+  getAdminPickupSlots(): Promise<{ slots: PickupSlot[] }> {
+    return this.request('/api/admin/pickup-slots');
+  }
+
+  createPickupSlot(data: { date: string; start_time: string; end_time: string }): Promise<{ id: number; ok: boolean }> {
+    return this.request('/api/admin/pickup-slots', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+  }
+
+  deletePickupSlot(id: number): Promise<{ ok: boolean }> {
+    return this.request(`/api/admin/pickup-slots/${id}`, { method: 'DELETE' });
+  }
+
+  getPickupSlots(): Promise<{ slots: PickupSlot[] }> {
+    return this.request('/api/pickup-slots');
+  }
+
+  selectPickupSlot(orderId: number, data: { pickup_slot_id: number | null; needs_individual_pickup: boolean }): Promise<{ ok: boolean }> {
+    return this.request(`/api/orders/${orderId}/pickup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
   }
 }
 

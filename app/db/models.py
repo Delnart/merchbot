@@ -7,6 +7,7 @@ from app.db.base import Base
 class OrderStatus(str, enum.Enum):
     pending = "pending"
     in_process = "in_process"
+    ready_for_pickup = "ready_for_pickup"
     completed = "completed"
     cancelled = "cancelled"
 
@@ -25,6 +26,7 @@ class UserProfile(Base):
     first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     last_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    checkout_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     orders: Mapped[list["Order"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -78,23 +80,25 @@ class Product(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    sizes: Mapped[list["ProductSize"]] = relationship(
-        back_populates="product", cascade="all, delete-orphan", order_by="ProductSize.id"
+    variants: Mapped[list["ProductVariant"]] = relationship(
+        back_populates="product", cascade="all, delete-orphan", order_by="ProductVariant.id"
     )
     visibility_groups: Mapped[list["ProductVisibility"]] = relationship(
         back_populates="product", cascade="all, delete-orphan"
     )
 
-class ProductSize(Base):
-    __tablename__ = "product_sizes"
-    __table_args__ = (UniqueConstraint("product_id", "size", name="uq_product_size"),)
+class ProductVariant(Base):
+    __tablename__ = "product_variants"
+    __table_args__ = (UniqueConstraint("product_id", "size", "color", name="uq_product_variant"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
     size: Mapped[str] = mapped_column(String(20))
+    color: Mapped[str | None] = mapped_column(String(20), nullable=True)
     price: Mapped[float] = mapped_column(Numeric(10, 2))
+    stock_quantity: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    product: Mapped[Product] = relationship(back_populates="sizes")
+    product: Mapped[Product] = relationship(back_populates="variants")
 
 class UserGroup(Base):
     __tablename__ = "user_groups"
@@ -160,6 +164,8 @@ class Order(Base):
     processed_by_admin: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    pickup_slot_id: Mapped[int | None] = mapped_column(ForeignKey("pickup_slots.id"), nullable=True)
+    needs_individual_pickup: Mapped[bool] = mapped_column(Boolean, default=False)
 
     user: Mapped[UserProfile] = relationship(back_populates="orders")
     items: Mapped[list["OrderItem"]] = relationship(back_populates="order", cascade="all, delete-orphan")
@@ -177,3 +183,13 @@ class OrderItem(Base):
     quantity: Mapped[int] = mapped_column(Integer)
 
     order: Mapped[Order] = relationship(back_populates="items")
+
+class PickupSlot(Base):
+    __tablename__ = "pickup_slots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    date: Mapped[datetime] = mapped_column(DateTime) # We'll store date as datetime without time part, or mapped_column(Date) but sqlite is finicky
+    start_time: Mapped[str] = mapped_column(String(10)) # HH:MM
+    end_time: Mapped[str] = mapped_column(String(10)) # HH:MM
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

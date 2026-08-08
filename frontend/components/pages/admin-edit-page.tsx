@@ -10,7 +10,7 @@ interface AdminEditPageProps {
   onSave: (data: {
     title: string;
     description: string;
-    sizesRaw: string;
+    variantsRaw: string;
     requiresColor: boolean;
     groupIds: number[];
     photoFile: File | null;
@@ -21,8 +21,8 @@ interface AdminEditPageProps {
 export default function AdminEditPage({ product, groups, onSave }: AdminEditPageProps) {
   const [title, setTitle] = useState(product?.title ?? '');
   const [description, setDescription] = useState(product?.description ?? '');
-  const [sizesRaw, setSizesRaw] = useState(
-    product ? product.sizes.map(s => `${s.size}:${s.price}`).join(', ') : '',
+  const [variantsRaw, setVariantsRaw] = useState(
+    product ? product.variants.map(v => `${v.size}${v.color ? ':' + v.color : ''}:${v.price}${v.quantity !== null ? ':' + v.quantity : ''}`).join(', ') : '',
   );
   const [requiresColor, setRequiresColor] = useState(product?.requires_color ?? false);
   const [groupIds, setGroupIds] = useState<number[]>(product?.group_ids ?? []);
@@ -42,8 +42,8 @@ export default function AdminEditPage({ product, groups, onSave }: AdminEditPage
   useEffect(() => {
     setTitle(product?.title ?? '');
     setDescription(product?.description ?? '');
-    setSizesRaw(
-      product ? product.sizes.map(s => `${s.size}:${s.price}`).join(', ') : '',
+    setVariantsRaw(
+      product ? product.variants.map(v => `${v.size}${v.color ? ':' + v.color : ''}:${v.price}${v.quantity !== null ? ':' + v.quantity : ''}`).join(', ') : '',
     );
     setRequiresColor(product?.requires_color ?? false);
     setGroupIds(product?.group_ids ?? []);
@@ -73,7 +73,7 @@ export default function AdminEditPage({ product, groups, onSave }: AdminEditPage
     if (saving) return;
     setSaving(true);
     try {
-      await onSave({ title, description, sizesRaw, requiresColor, groupIds, photoFile, photoBlackFile });
+      await onSave({ title, description, variantsRaw, requiresColor, groupIds, photoFile, photoBlackFile });
     } finally {
       setSaving(false);
     }
@@ -102,13 +102,18 @@ export default function AdminEditPage({ product, groups, onSave }: AdminEditPage
       </div>
 
       <div className="form-group">
-        <label className="form-label">Розміри та ціни (S:500, M:550, L:600)</label>
+        <label className="form-label">
+          {requiresColor ? 'Варіанти (Розмір:Колір:Ціна:Кількість)' : 'Варіанти (Розмір:Ціна:Кількість)'}
+        </label>
         <input
           className="form-input"
-          placeholder="S:500, M:550, L:600"
-          value={sizesRaw}
-          onChange={e => setSizesRaw(e.target.value)}
+          placeholder={requiresColor ? 'S:Білий:500:10, M:Чорний:550:5' : 'S:500:10, M:550:5'}
+          value={variantsRaw}
+          onChange={e => setVariantsRaw(e.target.value)}
         />
+        <div style={{ fontSize: '0.8rem', opacity: 0.6, marginTop: 4 }}>
+          Якщо кількість не обмежена, залишіть поле порожнім (напр. S:Білий:500)
+        </div>
       </div>
 
       <label className="checkbox-row" style={{ marginBottom: 16 }}>
@@ -210,7 +215,7 @@ export default function AdminEditPage({ product, groups, onSave }: AdminEditPage
       <button
         className="btn-primary"
         onClick={handleSave}
-        disabled={saving || !title.trim() || !description.trim() || !sizesRaw.trim()}
+        disabled={saving || !title.trim() || !description.trim() || !variantsRaw.trim()}
         type="button"
         style={{ marginTop: 4 }}
       >

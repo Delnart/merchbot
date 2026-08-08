@@ -4,7 +4,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.db.models import Product, ProductSize
+from app.db.models import Product, ProductVariant
 from app.services.groups import visibility_filter
 
 
@@ -24,7 +24,7 @@ async def list_active_products(session: AsyncSession) -> list[Product]:
     result = await session.execute(
         select(Product)
         .where(Product.is_active.is_(True))
-        .options(selectinload(Product.sizes))
+        .options(selectinload(Product.variants))
         .order_by(Product.id.desc())
     )
     return list(result.scalars().all())
@@ -36,7 +36,7 @@ async def list_visible_products(session: AsyncSession, group_ids: set[int]) -> l
         select(Product)
         .where(Product.is_active.is_(True))
         .where(visibility_filter(group_ids))
-        .options(selectinload(Product.sizes))
+        .options(selectinload(Product.variants))
         .order_by(Product.id.desc())
     )
     return list(result.scalars().all())
@@ -44,7 +44,7 @@ async def list_visible_products(session: AsyncSession, group_ids: set[int]) -> l
 
 async def list_all_products(session: AsyncSession) -> list[Product]:
     result = await session.execute(
-        select(Product).options(selectinload(Product.sizes)).order_by(Product.id.desc())
+        select(Product).options(selectinload(Product.variants)).order_by(Product.id.desc())
     )
     return list(result.scalars().all())
 
@@ -68,25 +68,20 @@ async def archive_product(session: AsyncSession, product: Product, is_active: bo
     await session.flush()
 
 
-async def replace_sizes(session: AsyncSession, product: Product, size_prices: dict[str, float]) -> None:
-    await session.execute(delete(ProductSize).where(ProductSize.product_id == product.id))
-    for size, price in size_prices.items():
-        session.add(ProductSize(product_id=product.id, size=size, price=Decimal(str(price))))
+async def replace_variants(session: AsyncSession, product: Product, variants: list[dict]) -> None:
+    await session.execute(delete(ProductVariant).where(ProductVariant.product_id == product.id))
+    for v in variants:
+        session.add(
+            ProductVariant(
+                product_id=product.id,
+                size=v["size"],
+                color=v.get("color"),
+                price=Decimal(str(v["price"])),
+                stock_quantity=v.get("quantity")
+            )
+        )
     await session.flush()
 
-
-async def set_size_price(session: AsyncSession, product: Product, size: str, price: float) -> None:
-    query = select(ProductSize).where(ProductSize.product_id == product.id, ProductSize.size == size.upper())
-    result = await session.execute(query)
-    line = result.scalar_one_or_none()
-    if line is None:
-        line = ProductSize(product_id=product.id, size=size.upper(), price=Decimal(str(price)))
-        session.add(line)
-    else:
-        line.price = Decimal(str(price))
-    await session.flush()
-
-
-async def get_sizes(session: AsyncSession, product_id: int) -> list[ProductSize]:
-    result = await session.execute(select(ProductSize).where(ProductSize.product_id == product_id).order_by(ProductSize.id.asc()))
+async def get_variants(session: AsyncSession, product_id: int) -> list[ProductVariant]:
+    result = await session.execute(select(ProductVariant).where(ProductVariant.product_id == product_id).order_by(ProductVariant.id.asc()))
     return list(result.scalars().all())

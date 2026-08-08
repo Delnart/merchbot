@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CartItem, CartResponse, CatalogProduct, Order, Recipient, ShopConfig, UserGroup } from '@/lib/api';
 import { buildApiClient } from '@/lib/api';
 import { getTelegramInitData, getTelegramWebApp, isOpenedInTelegram } from '@/lib/telegram';
-import { humanizeApiError, parseSizesInput } from '@/lib/validation';
+import { humanizeApiError, parseVariantsInput } from '@/lib/validation';
 
 import AdminEditPage from '@/components/pages/admin-edit-page';
 import AdminGroupsPage from '@/components/pages/admin-groups-page';
@@ -16,6 +16,8 @@ import CheckoutPage from '@/components/pages/checkout-page';
 import ProductPage from '@/components/pages/product-page';
 import SettingsPage from '@/components/pages/settings-page';
 import SuccessPage from '@/components/pages/success-page';
+import PickupPage from '@/components/pages/pickup-page';
+import AdminPickupPage from '@/components/pages/admin-pickup-page';
 import BottomNav from '@/components/ui/bottom-nav';
 import Toast from '@/components/ui/toast';
 
@@ -28,6 +30,8 @@ export type Page =
   | 'admin'
   | 'admin-edit'
   | 'admin-groups'
+  | 'admin-pickup'
+  | 'pickup'
   | 'success';
 
 const PAGE_TITLES: Record<Page, string> = {
@@ -39,6 +43,8 @@ const PAGE_TITLES: Record<Page, string> = {
   admin: 'Управління товарами',
   'admin-edit': '',
   'admin-groups': 'Групи користувачів',
+  'admin-pickup': 'Слоти видачі',
+  pickup: 'Обрати час видачі',
   success: 'Готово',
 };
 
@@ -48,6 +54,7 @@ export default function MiniAppShell() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [bootstrapDone, setBootstrapDone] = useState(false);
   const [notInTelegram, setNotInTelegram] = useState(false);
+  const [pickupOrderId, setPickupOrderId] = useState<number | null>(null);
 
   // Catalog
   const [products, setProducts] = useState<CatalogProduct[]>([]);
@@ -132,10 +139,14 @@ export default function MiniAppShell() {
         applyCart(cartData);
 
         const urlPage = new URLSearchParams(window.location.search).get('page');
+        const urlOrderId = new URLSearchParams(window.location.search).get('order_id');
         if (urlPage === 'admin') {
           await adminPromise;
           setPage('admin');
           void loadAdmin();
+        } else if (urlPage === 'pickup' && urlOrderId) {
+          setPickupOrderId(parseInt(urlOrderId, 10));
+          setPage('pickup');
         }
       } catch (e) {
         showToast(humanizeApiError(e));
@@ -484,7 +495,7 @@ export default function MiniAppShell() {
   const saveProduct = async (data: {
     title: string;
     description: string;
-    sizesRaw: string;
+    variantsRaw: string;
     requiresColor: boolean;
     groupIds: number[];
     photoFile: File | null;
@@ -495,9 +506,9 @@ export default function MiniAppShell() {
       return;
     }
 
-    let sizes: Record<string, number>;
+    let variants;
     try {
-      sizes = parseSizesInput(data.sizesRaw);
+      variants = parseVariantsInput(data.variantsRaw, data.requiresColor);
     } catch (e) {
       showToast(humanizeApiError(e));
       return;
@@ -510,7 +521,7 @@ export default function MiniAppShell() {
           title: data.title.trim(),
           description: data.description.trim(),
           requires_color: data.requiresColor,
-          sizes,
+          variants,
           group_ids: data.groupIds,
         });
         productId = editingProduct.id;
@@ -519,7 +530,7 @@ export default function MiniAppShell() {
           title: data.title.trim(),
           description: data.description.trim(),
           requires_color: data.requiresColor,
-          sizes,
+          variants,
           group_ids: data.groupIds,
         });
         productId = created.id;
@@ -674,6 +685,10 @@ export default function MiniAppShell() {
               setPage('admin-groups');
               window.scrollTo(0, 0);
             }}
+            onOpenPickupSlots={() => {
+              setPage('admin-pickup');
+              window.scrollTo(0, 0);
+            }}
           />
         )}
 
@@ -696,13 +711,36 @@ export default function MiniAppShell() {
           />
         )}
 
+        {page === 'admin-pickup' && (
+          <AdminPickupPage
+            api={api}
+            showToast={showToast}
+            onBack={() => {
+              setPage('admin');
+              window.scrollTo(0, 0);
+            }}
+          />
+        )}
+
+        {page === 'pickup' && pickupOrderId && (
+          <PickupPage
+            orderId={pickupOrderId}
+            api={api}
+            showToast={showToast}
+            onSuccess={() => {
+              setPage('catalog');
+              window.scrollTo(0, 0);
+            }}
+          />
+        )}
+
         {page === 'success' && (
           <SuccessPage orderId={successOrderId} onBack={() => navigate('catalog')} />
         )}
       </main>
 
       {/* Bottom nav — hidden on sub-pages */}
-      {!showBack && page !== 'success' && (
+      {!showBack && page !== 'success' && page !== 'pickup' && (
         <BottomNav
           page={page}
           cartCount={cartCount}
