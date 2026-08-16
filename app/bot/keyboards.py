@@ -57,8 +57,10 @@ def order_status_keyboard(order_id: int, current_status: OrderStatus, admin_name
     return b.as_markup()
 
 def user_pickup_keyboard(order_id: int) -> InlineKeyboardMarkup:
+    import time
     b = InlineKeyboardBuilder()
-    webapp_url = f"{settings.resolved_webapp_url}?page=pickup&order_id={order_id}"
+    # Add a cache-busting timestamp so Telegram Android doesn't restore a cached main page
+    webapp_url = f"{settings.resolved_webapp_url}?page=pickup&order_id={order_id}&_t={int(time.time())}"
     b.button(text="🗓 Обрати час видачі", web_app=WebAppInfo(url=webapp_url))
     b.adjust(1)
     return b.as_markup()

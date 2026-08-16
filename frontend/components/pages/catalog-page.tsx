@@ -12,13 +12,27 @@ interface CatalogPageProps {
 }
 
 export default function CatalogPage({ products, loading, onOpenProduct }: CatalogPageProps) {
-  if (loading) return <Spinner />;
+  if (loading && !products.length) {
+    return (
+      <div className="product-grid">
+        {[1, 2, 3, 4].map(i => (
+          <article key={i} className="card product-card" style={{ pointerEvents: 'none' }}>
+            <div className="product-image-wrap skeleton-bg" />
+            <div className="product-info">
+              <div className="skeleton-bg" style={{ height: 14, width: '80%', marginBottom: 8, borderRadius: 4 }} />
+              <div className="skeleton-bg" style={{ height: 14, width: '40%', borderRadius: 4 }} />
+            </div>
+          </article>
+        ))}
+      </div>
+    );
+  }
 
   if (!products.length) {
     return (
       <div className="empty-state">
         <div className="empty-icon">—</div>
-        <div className="empty-text">Предзамовлення недоступне</div>
+        <div className="empty-text">Каталог порожній</div>
       </div>
     );
   }
@@ -36,7 +50,7 @@ export default function CatalogPage({ products, loading, onOpenProduct }: Catalo
           tabIndex={0}
           onKeyDown={e => e.key === 'Enter' && onOpenProduct(p.id)}
         >
-          <div className="product-image-wrap">
+          <div className="product-image-wrap skeleton-bg">
             {photoUrl ? (
               <Image
                 src={photoUrl}

@@ -233,6 +233,10 @@ class OrderPickupSelect(BaseModel):
 
 # ── Catalog endpoints ────────────────────────────────────────────────────────
 
+_catalog_cache = {}
+_catalog_cache_ts = {}
+CATALOG_CACHE_TTL = 30  # seconds
+
 @router.get("/catalog")
 async def api_catalog(user: dict = Depends(get_telegram_user)):
     telegram_id = user.get("id")
@@ -243,6 +247,12 @@ async def api_catalog(user: dict = Depends(get_telegram_user)):
         async with session.begin():
             await ensure_user(session, telegram_id, username, user.get("first_name"), user.get("last_name"))
         group_ids = await get_user_group_ids(session, telegram_id, username)
+        
+        cache_key = frozenset(group_ids)
+        now = time.monotonic()
+        if cache_key in _catalog_cache and now - _catalog_cache_ts.get(cache_key, 0) < CATALOG_CACHE_TTL:
+            return {"products": _catalog_cache[cache_key]}
+            
         products = await list_visible_products(session, group_ids)
         reserved_qtys = await get_all_reserved_quantities(session)
         result = []
@@ -258,6 +268,10 @@ async def api_catalog(user: dict = Depends(get_telegram_user)):
                 "min_price": float(min_price),
                 "variants": [{"size": v.size, "color": v.color, "price": float(v.price), "quantity": v.stock_quantity, "reserved": reserved_qtys.get((p.id, v.size, v.color), 0)} for v in p.variants],
             })
+        
+        _catalog_cache[cache_key] = result
+        _catalog_cache_ts[cache_key] = now
+        
     return {"products": result}
 
 
@@ -845,7 +859,6 @@ async def _upload_photo_to_telegram(chat_id: int, photo_bytes: bytes) -> str:
     if img_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(status_code=400, detail="invalid_file_type")
 
-    photo_bytes = await asyncio.to_thread(resize_image_for_telegram, photo_bytes)
     input_file = BufferedInputFile(photo_bytes, filename="receipt.jpg")
     try:
         msg = await bot.send_photo(chat_id=chat_id, photo=input_file, disable_notification=True)

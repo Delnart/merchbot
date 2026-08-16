@@ -124,7 +124,7 @@ export default function MiniAppShell() {
       return;
     }
 
-    const bootstrap = async () => {
+    const bootstrap = () => {
       // Admin check runs in parallel and never blocks the first render
       const adminPromise = api
         .checkAdmin()
@@ -133,27 +133,25 @@ export default function MiniAppShell() {
           // not an admin — that's fine
         });
 
-      try {
-        const [catalogData, cartData] = await Promise.all([api.getCatalog(), api.getCart()]);
-        setProducts(catalogData.products);
-        applyCart(cartData);
-
-        const urlPage = new URLSearchParams(window.location.search).get('page');
-        const urlOrderId = new URLSearchParams(window.location.search).get('order_id');
-        if (urlPage === 'admin') {
-          await adminPromise;
-          setPage('admin');
-          void loadAdmin();
-        } else if (urlPage === 'pickup' && urlOrderId) {
-          setPickupOrderId(parseInt(urlOrderId, 10));
-          setPage('pickup');
-        }
-      } catch (e) {
-        showToast(humanizeApiError(e));
-      } finally {
-        setCatalogLoading(false);
-        setBootstrapDone(true);
+      const urlPage = new URLSearchParams(window.location.search).get('page');
+      const urlOrderId = new URLSearchParams(window.location.search).get('order_id');
+      if (urlPage === 'admin') {
+        setPage('admin');
+        void loadAdmin();
+      } else if (urlPage === 'pickup' && urlOrderId) {
+        setPickupOrderId(parseInt(urlOrderId, 10));
+        setPage('pickup');
       }
+      
+      setBootstrapDone(true); // show UI instantly
+
+      Promise.all([api.getCatalog(), api.getCart()])
+        .then(([catalogData, cartData]) => {
+          setProducts(catalogData.products);
+          applyCart(cartData);
+        })
+        .catch(e => showToast(humanizeApiError(e)))
+        .finally(() => setCatalogLoading(false));
     };
 
     void bootstrap();

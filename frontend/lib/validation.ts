@@ -90,6 +90,7 @@ export function orderStatusLabel(status: string): string {
   const labels: Record<string, string> = {
     pending: 'Очікує',
     in_process: 'В роботі',
+    ready_for_pickup: 'Готове до видачі',
     completed: 'Виконано',
     cancelled: 'Скасовано',
   };
