@@ -43,6 +43,15 @@ services:
       - key: NEXT_PUBLIC_API_BASE_URL
         sync: false
     headers:
+      # Next.js static chunks have content-hash filenames — safe to cache forever
       - path: /_next/static/*
         name: Cache-Control
         value: public, max-age=31536000, immutable
+      # The HTML entry point must never be cached — Telegram WebApp
+      # should always fetch the latest shell on every open.
+      - path: /
+        name: Cache-Control
+        value: no-cache, no-store, must-revalidate
+      - path: /index.html
+        name: Cache-Control
+        value: no-cache, no-store, must-revalidate
