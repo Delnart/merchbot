@@ -47,7 +47,7 @@ async def init_db() -> None:
         # ALTER TYPE cannot run inside a transaction block in Postgres.
         try:
             async with engine.connect() as conn:
-                await conn.execution_options(isolation_level="AUTOCOMMIT")
+                conn = conn.execution_options(isolation_level="AUTOCOMMIT")
                 await conn.execute(text("ALTER TYPE orderstatus ADD VALUE IF NOT EXISTS 'ready_for_pickup'"))
         except Exception:
             pass

@@ -97,7 +97,7 @@ export function orderStatusLabel(status: string): string {
 }
 
 /** Compress image before upload */
-export async function compressImage(file: File, maxSize = 1200): Promise<File> {
+export async function compressImage(file: File, maxSize = 1200): Promise<File | Blob> {
   return new Promise(resolve => {
     const reader = new FileReader();
     reader.onload = e => {
@@ -118,7 +118,7 @@ export async function compressImage(file: File, maxSize = 1200): Promise<File> {
         canvas.toBlob(
           blob => {
             if (blob) {
-              resolve(new File([blob], 'image.jpg', { type: 'image/jpeg' }));
+              resolve(blob);
             } else {
               resolve(file);
             }

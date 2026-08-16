@@ -38,7 +38,7 @@ export default function CheckoutPage({
   const [delivery, setDelivery] = useState<DeliveryMethod | null>(null);
   const [address, setAddress] = useState('');
 
-  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptFile, setReceiptFile] = useState<File | Blob | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -60,7 +60,7 @@ export default function CheckoutPage({
   const handleReceiptChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const compressed = await compressImage(file);
+    const compressed = await compressImage(file, 1200);
     setReceiptFile(compressed);
     const url = URL.createObjectURL(compressed);
     setReceiptPreview(url);
@@ -88,7 +88,7 @@ export default function CheckoutPage({
         fd.append('save_recipient', String(saveRecipient));
       }
 
-      fd.append('receipt_photo', receiptFile!);
+      fd.append('receipt_photo', receiptFile!, 'receipt.jpg');
       await onSubmit(fd);
     } finally {
       setSubmitting(false);
