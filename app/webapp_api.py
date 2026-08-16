@@ -766,7 +766,9 @@ async def api_checkout(
             # Clear checkout session and deduct stock
             user_profile = await ensure_user(session, telegram_id, None, None, None)
             user_profile.checkout_expires_at = None
-            for item in order.items:
+            
+            order_items = (await session.execute(select(OrderItem).where(OrderItem.order_id == order.id))).scalars().all()
+            for item in order_items:
                 if item.product_id:
                     v_query = select(ProductVariant).where(
                         ProductVariant.product_id == item.product_id,
@@ -788,7 +790,7 @@ async def api_checkout(
 
     # Sync to Google Sheets in a worker thread: gspread performs blocking HTTP
     # calls that would freeze the event loop and delay the response by seconds
-    items_str = "; ".join([f"{i.title} {i.size}{' ' + i.color if i.color else ''} x{i.quantity}" for i in order.items])
+    items_str = "; ".join([f"{i.title} {i.size}{' ' + i.color if i.color else ''} x{i.quantity}" for i in order_items])
     run_blocking_in_background(
         sync_order_to_sheet,
         order_id=order.id,
@@ -803,7 +805,7 @@ async def api_checkout(
     # Notify admin chat without making the customer wait
     if binding is not None:
         fire_and_forget(
-            _notify_admin_chat(binding, order, final_name, final_phone, delivery_method, address, receipt_file_id)
+            _notify_admin_chat(binding, order, order_items, final_name, final_phone, delivery_method, address, receipt_file_id)
         )
 
     return {"ok": True, "order_id": order.id}
@@ -872,7 +874,7 @@ async def _upload_photo_to_telegram(chat_id: int, photo_bytes: bytes) -> str:
     return file_id
 
 
-async def _notify_admin_chat(binding, order, name, phone, delivery_method, address, receipt_file_id):
+async def _notify_admin_chat(binding, order, order_items, name, phone, delivery_method, address, receipt_file_id):
     """Send order notification to admin chat."""
     from app.main import bot
 
@@ -892,7 +894,7 @@ async def _notify_admin_chat(binding, order, name, phone, delivery_method, addre
         f"💰 Сума: {Decimal(order.total_amount)} {order.currency}",
         "\n📦 Позиції:",
     ]
-    for item in order.items:
+    for item in order_items:
         color_str = f" | {item.color}" if item.color else ""
         lines.append(f"▫️ {item.title} | {item.size}{color_str} | {item.quantity} шт x {Decimal(item.unit_price)} грн")
 
