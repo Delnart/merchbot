@@ -649,7 +649,7 @@ async def api_select_pickup_slot(order_id: int, body: OrderPickupSelect, telegra
 # ── Checkout endpoint ────────────────────────────────────────────────────────
 
 def _delivery_label(method: str) -> str:
-    return {"nova_poshta": "Нова Пошта", "campus": "На DayF", "dayf": "DayF", "later_campus": "Пізніше в корпусі"}.get(method, method)
+    return {"nova_poshta": "Нова Пошта", "campus": "На DayF", "dayf": "DayF", "later_campus": "В корпусі"}.get(method, method)
 
 @router.post("/checkout/start")
 async def api_checkout_start(user: dict = Depends(get_telegram_user)):

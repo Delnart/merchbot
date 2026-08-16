@@ -81,7 +81,7 @@ export function deliveryLabel(method: string): string {
     nova_poshta: 'Нова Пошта',
     campus: 'На DayF',
     dayf: 'DayF',
-    later_campus: 'Пізніше в корпусі',
+    later_campus: 'В корпусі',
   };
   return labels[method] ?? method;
 }

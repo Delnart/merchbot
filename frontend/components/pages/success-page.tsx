@@ -13,8 +13,19 @@ export default function SuccessPage({ orderId, onBack }: SuccessPageProps) {
           ? `Замовлення #${orderId} прийнято. Ми перевіримо оплату та повідомимо вас у боті.`
           : 'Ваше замовлення прийнято. Ми перевіримо оплату та повідомимо вас.'}
       </div>
-      <button className="btn-primary" onClick={onBack} type="button" style={{ maxWidth: 280, margin: '0 auto' }}>
-        Повернутись до каталогу
+      <button 
+        className="btn-primary" 
+        onClick={() => {
+          if (typeof window !== 'undefined' && window.Telegram?.WebApp) {
+            window.Telegram.WebApp.close();
+          } else {
+            onBack();
+          }
+        }} 
+        type="button" 
+        style={{ maxWidth: 280, margin: '0 auto' }}
+      >
+        Закрити
       </button>
     </div>
   );
