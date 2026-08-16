@@ -12,6 +12,7 @@ interface SettingsPageProps {
   onSetDefault: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onCreateRecipient: (name: string, phone: string) => Promise<void>;
+  onPickup: (orderId: number) => void;
 }
 
 export default function SettingsPage({
@@ -21,6 +22,7 @@ export default function SettingsPage({
   onSetDefault,
   onDelete,
   onCreateRecipient,
+  onPickup,
 }: SettingsPageProps) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -110,6 +112,16 @@ export default function SettingsPage({
                     {orderStatusLabel(o.status)}
                   </span>
                 </div>
+                {o.status === 'ready_for_pickup' && !o.pickup_slot_id && (
+                  <button
+                    className="btn-primary"
+                    style={{ marginTop: 10, padding: '8px 14px', fontSize: '0.85rem' }}
+                    onClick={() => onPickup(o.id)}
+                    type="button"
+                  >
+                    🗓 Обрати час видачі
+                  </button>
+                )}
               </div>
             </div>
           ))}

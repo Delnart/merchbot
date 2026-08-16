@@ -463,6 +463,7 @@ async def api_orders_list(telegram_id: int = Depends(get_telegram_id)):
                 "created_at": o.created_at.isoformat(),
                 "delivery_method": o.delivery_method.value if o.delivery_method else None,
                 "address": o.address,
+                "pickup_slot_id": o.pickup_slot_id,
             } for o in orders
         ]
     }

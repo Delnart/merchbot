@@ -16,8 +16,10 @@ export default function SuccessPage({ orderId, onBack }: SuccessPageProps) {
       <button 
         className="btn-primary" 
         onClick={() => {
-          if (typeof window !== 'undefined' && window.Telegram?.WebApp) {
-            window.Telegram.WebApp.close();
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const tg = (window as any)?.Telegram?.WebApp;
+          if (typeof window !== 'undefined' && tg) {
+            tg.close();
           } else {
             onBack();
           }

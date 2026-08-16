@@ -668,6 +668,11 @@ export default function MiniAppShell() {
             onSetDefault={setDefaultRecipient}
             onDelete={deleteRecipient}
             onCreateRecipient={createRecipient}
+            onPickup={orderId => {
+              setPickupOrderId(orderId);
+              setPage('pickup');
+              window.scrollTo(0, 0);
+            }}
           />
         )}
 
@@ -731,7 +736,8 @@ export default function MiniAppShell() {
             api={api}
             showToast={showToast}
             onSuccess={() => {
-              setPage('catalog');
+              void loadSettings();
+              setPage('settings');
               window.scrollTo(0, 0);
             }}
           />

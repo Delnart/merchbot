@@ -60,11 +60,12 @@ export type Recipient = {
 
 export type Order = {
   id: number;
-  status: 'pending' | 'in_process' | 'completed' | 'cancelled';
+  status: 'pending' | 'in_process' | 'ready_for_pickup' | 'completed' | 'cancelled';
   total_amount: number;
   created_at: string;
   delivery_method: string | null;
   address: string;
+  pickup_slot_id?: number | null;
 };
 
 export type ShopConfig = {
