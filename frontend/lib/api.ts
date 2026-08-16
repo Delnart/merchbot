@@ -43,6 +43,7 @@ export type CartItem = {
   quantity: number;
   line_total: number;
   photo_url: string | null;
+  available_quantity: number | null;
 };
 
 export type CartResponse = {

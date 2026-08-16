@@ -87,7 +87,10 @@ export default function CartPage({ cart, loading, onChangeQty, onRemove, onClear
                   <button
                     className="qty-btn"
                     onClick={() => onChangeQty(item.id, 1)}
-                    disabled={item.quantity >= MAX_QUANTITY}
+                    disabled={
+                      item.quantity >= MAX_QUANTITY ||
+                      (item.available_quantity !== null && item.quantity >= item.available_quantity)
+                    }
                     type="button"
                     aria-label="Збільшити"
                   >

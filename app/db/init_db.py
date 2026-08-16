@@ -43,6 +43,14 @@ async def init_db() -> None:
         async with engine.begin() as conn:
             for stmt in _PG_MIGRATIONS:
                 await conn.execute(text(stmt))
+        
+        # ALTER TYPE cannot run inside a transaction block in Postgres.
+        try:
+            async with engine.connect() as conn:
+                await conn.execution_options(isolation_level="AUTOCOMMIT")
+                await conn.execute(text("ALTER TYPE orderstatus ADD VALUE IF NOT EXISTS 'ready_for_pickup'"))
+        except Exception:
+            pass
         # Old databases may have uq_cart_line WITHOUT the color column, which
         # breaks color-variant carts. Recreate it only when color is missing,
         # so we don't churn the constraint on every boot.

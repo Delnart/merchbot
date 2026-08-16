@@ -9,7 +9,6 @@ type DeliveryMethod = 'nova_poshta' | 'campus' | 'dayf' | 'later_campus';
 
 const DELIVERY_OPTIONS: { id: DeliveryMethod; label: string }[] = [
   { id: 'nova_poshta', label: 'Нова Пошта' },
-  { id: 'campus', label: 'На DayF' },
   { id: 'later_campus', label: 'Пізніше в корпусі' },
 ];
 
@@ -46,7 +45,7 @@ export default function CheckoutPage({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const deliveryOptions = config.is_dayf_delivery_enabled
-    ? [...DELIVERY_OPTIONS.slice(0, 2), { id: 'dayf' as DeliveryMethod, label: 'DayF' }, DELIVERY_OPTIONS[2]]
+    ? [DELIVERY_OPTIONS[0], { id: 'dayf' as DeliveryMethod, label: 'DayF' }, DELIVERY_OPTIONS[1]]
     : DELIVERY_OPTIONS;
 
   const hasRecipient = recipientId !== null || (!!newName.trim() && isValidUaPhone(newPhone));

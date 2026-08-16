@@ -348,11 +348,19 @@ async def api_shop_config(_: int = Depends(get_telegram_id)):
 async def api_cart_view(telegram_id: int = Depends(get_telegram_id)):
     async with AsyncSessionLocal() as session:
         rows = await list_cart(session, telegram_id)
+        reserved_qtys = await get_all_reserved_quantities(session)
     items = []
     total = Decimal("0")
     for item, product in rows:
         line_total = Decimal(str(item.price)) * item.quantity
         total += line_total
+        # Get available quantity for this variant
+        v = next((v for v in product.variants if v.size == item.size and v.color == item.color), None)
+        available_qty = None
+        if v and v.stock_quantity is not None:
+            reserved = reserved_qtys.get((product.id, v.size, v.color), 0)
+            available_qty = max(0, v.stock_quantity - reserved)
+
         items.append({
             "id": item.id,
             "product_id": item.product_id,
@@ -363,6 +371,7 @@ async def api_cart_view(telegram_id: int = Depends(get_telegram_id)):
             "quantity": item.quantity,
             "line_total": float(line_total),
             "photo_url": f"/api/photos/{product.photo_file_id}" if product.photo_file_id else None,
+            "available_quantity": available_qty,
         })
     return {"items": items, "total": float(total)}
 
