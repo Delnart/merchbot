@@ -367,6 +367,11 @@ export default function MiniAppShell() {
 
   const submitCheckout = async (formData: FormData) => {
     try {
+      const photo = formData.get('receipt_photo') as File | null;
+      if (photo && photo.size > 9.9 * 1024 * 1024) {
+        throw new Error('file_too_large');
+      }
+
       const result = await api.checkout(formData);
       await reloadCart();
       setSuccessOrderId(result.order_id);

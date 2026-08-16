@@ -70,6 +70,7 @@ export function humanizeApiError(error: unknown): string {
     no_admin_chat: 'Адмін-чат не налаштований.',
     empty_cart: 'Кошик порожній.',
     user_not_found: 'Користувача не знайдено.',
+    file_too_large: 'Файл занадто великий. Будь ласка, оберіть фото меншого розміру (до 10 МБ).',
   };
 
   return map[error.message] ?? `Помилка: ${error.message}`;
