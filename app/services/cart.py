@@ -112,11 +112,14 @@ async def add_to_cart(session: AsyncSession, telegram_id: int, product_id: int, 
     await session.flush()
 
 
+from sqlalchemy.orm import selectinload
+
 async def list_cart(session: AsyncSession, telegram_id: int) -> list[tuple[CartItem, Product]]:
     query = (
         select(CartItem, Product)
         .join(Product, Product.id == CartItem.product_id)
         .where(CartItem.telegram_id == telegram_id)
+        .options(selectinload(Product.variants))
         .order_by(CartItem.id.asc())
     )
     result = await session.execute(query)
