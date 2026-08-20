@@ -301,8 +301,11 @@ async def order_status_handler(callback: CallbackQuery, bot: Bot) -> None:
             order_recipient = order.recipient_name or ""
             order_delivery_method = order.delivery_method
             order_delivery = f"{order.delivery_method.value if order.delivery_method else ''} {order.address}"
-            await session.refresh(order, attribute_names=["items"])
-            items_str = "; ".join([f"{i.title} {i.size}{' ' + i.color if i.color else ''} x{i.quantity}" for i in order.items])
+            from sqlalchemy import select as sa_select
+            from app.db.models import OrderItem
+            items_res = await session.execute(sa_select(OrderItem).where(OrderItem.order_id == order.id))
+            order_items = items_res.scalars().all()
+            items_str = "; ".join([f"{i.title} {i.size}{' ' + i.color if i.color else ''} x{i.quantity}" for i in order_items])
 
     status_translations = {
         OrderStatus.in_process: "🔄 В роботі",
