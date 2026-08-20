@@ -66,6 +66,8 @@ export type Order = {
   delivery_method: string | null;
   address: string;
   pickup_slot_id?: number | null;
+  pickup_slot_label?: string | null;
+  needs_individual_pickup?: boolean;
 };
 
 export type ShopConfig = {

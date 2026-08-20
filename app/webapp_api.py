@@ -454,6 +454,22 @@ async def api_orders_list(telegram_id: int = Depends(get_telegram_id)):
             select(Order).where(Order.telegram_id == telegram_id).order_by(Order.created_at.desc())
         )
         orders = list(result.scalars().all())
+        
+        # Fetch slot labels for orders that have a slot
+        slot_ids = [o.pickup_slot_id for o in orders if o.pickup_slot_id]
+        slot_labels: dict[int, str] = {}
+        if slot_ids:
+            slots_res = await session.execute(select(PickupSlot).where(PickupSlot.id.in_(slot_ids)))
+            for s in slots_res.scalars().all():
+                date_str = s.date.strftime("%-d.%-m") if hasattr(s.date, 'strftime') else str(s.date)
+                try:
+                    import datetime as _dt
+                    d = s.date if isinstance(s.date, _dt.date) else _dt.datetime.fromisoformat(str(s.date)).date()
+                    date_str = f"{d.day:02d}.{d.month:02d}"
+                except Exception:
+                    date_str = str(s.date)
+                slot_labels[s.id] = f"{date_str}, {s.start_time}–{s.end_time}"
+        
     return {
         "orders": [
             {
@@ -464,6 +480,8 @@ async def api_orders_list(telegram_id: int = Depends(get_telegram_id)):
                 "delivery_method": o.delivery_method.value if o.delivery_method else None,
                 "address": o.address,
                 "pickup_slot_id": o.pickup_slot_id,
+                "pickup_slot_label": slot_labels.get(o.pickup_slot_id) if o.pickup_slot_id else None,
+                "needs_individual_pickup": o.needs_individual_pickup,
             } for o in orders
         ]
     }
@@ -643,6 +661,27 @@ async def api_select_pickup_slot(order_id: int, body: OrderPickupSelect, telegra
                         )
                     except Exception:
                         pass
+            
+            # Notify user in Telegram about their confirmed slot
+            from app.main import bot as _bot
+            try:
+                if body.needs_individual_pickup and not body.pickup_slot_id:
+                    user_msg = (
+                        f"✅ Ваш запит на індивідуальну видачу для замовлення #{order.id} прийнято!\n"
+                        f"Ми зв'яжемося з вами для узгодження часу."
+                    )
+                elif body.pickup_slot_id:
+                    user_msg = (
+                        f"✅ Час видачі для замовлення #{order.id} підтверджено!\n\n"
+                        f"📦 {slot_info}\n\n"
+                        f"Не забудьте прийти в корпус у вказаний час 🙂"
+                    )
+                else:
+                    user_msg = None
+                if user_msg:
+                    await _bot.send_message(order.telegram_id, user_msg)
+            except Exception:
+                pass
             
     return {"ok": True}
 

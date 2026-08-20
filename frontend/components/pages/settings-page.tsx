@@ -112,7 +112,17 @@ export default function SettingsPage({
                     {orderStatusLabel(o.status)}
                   </span>
                 </div>
-                {o.status === 'ready_for_pickup' && !o.pickup_slot_id && (
+                {o.status === 'ready_for_pickup' && o.pickup_slot_id && (
+                  <div style={{ marginTop: 8, fontSize: '0.82rem', color: 'var(--accent)', fontWeight: 500 }}>
+                    🗓 Час видачі: {o.pickup_slot_label ?? `Слот #${o.pickup_slot_id}`}
+                  </div>
+                )}
+                {o.status === 'ready_for_pickup' && o.needs_individual_pickup && !o.pickup_slot_id && (
+                  <div style={{ marginTop: 8, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                    📞 Видача індивідуально — з вами зв'яжуться
+                  </div>
+                )}
+                {o.status === 'ready_for_pickup' && !o.pickup_slot_id && !o.needs_individual_pickup && (
                   <button
                     className="btn-primary"
                     style={{ marginTop: 10, padding: '8px 14px', fontSize: '0.85rem' }}
