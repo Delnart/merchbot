@@ -9,7 +9,7 @@ type DeliveryMethod = 'nova_poshta' | 'campus' | 'dayf' | 'later_campus';
 
 const DELIVERY_OPTIONS: { id: DeliveryMethod; label: string }[] = [
   { id: 'nova_poshta', label: 'Нова Пошта' },
-  { id: 'later_campus', label: 'Пізніше в корпусі' },
+  { id: 'later_campus', label: 'В корпусі' },
 ];
 
 interface CheckoutPageProps {
