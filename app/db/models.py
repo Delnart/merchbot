@@ -54,6 +54,9 @@ class AdminChatBinding(Base):
     pinned_config_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Forum topic (thread) IDs — None means general chat (no topic)
+    orders_thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    support_thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 class ShopConfig(Base):
     __tablename__ = "shop_configs"

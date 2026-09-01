@@ -955,12 +955,15 @@ async def _notify_admin_chat(binding, order, order_items, name, phone, delivery_
 
     from app.bot.keyboards import order_status_keyboard
 
+    thread_kwargs = {"message_thread_id": binding.orders_thread_id} if getattr(binding, "orders_thread_id", None) else {}
+
     try:
         sent = await bot.send_photo(
             binding.chat_id,
             photo=receipt_file_id,
             caption=caption,
             reply_markup=order_status_keyboard(order.id, OrderStatus.pending),
+            **thread_kwargs,
         )
         async with AsyncSessionLocal() as session:
             async with session.begin():
@@ -985,6 +988,7 @@ async def _notify_admin_chat(binding, order, order_items, name, phone, delivery_
                     photo=receipt_file_id,
                     caption=caption,
                     reply_markup=order_status_keyboard(order.id, OrderStatus.pending),
+                    **thread_kwargs,
                 )
                 async with AsyncSessionLocal() as session:
                     async with session.begin():
@@ -1001,6 +1005,7 @@ async def _notify_admin_chat(binding, order, order_items, name, phone, delivery_
                 binding.chat_id,
                 text=caption + f"\n\n⚠️ Помилка: {e}",
                 reply_markup=order_status_keyboard(order.id, OrderStatus.pending),
+                **thread_kwargs,
             )
             async with AsyncSessionLocal() as session:
                 async with session.begin():

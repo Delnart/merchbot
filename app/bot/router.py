@@ -95,6 +95,56 @@ async def bind_admin_chat_handler(message: Message, bot: Bot) -> None:
     await message.answer("✅ Цю групу успішно прив'язано як адмін-чат.")
 
 
+@router.message(Command("setthreads"))
+async def setthreads_handler(message: Message, bot: Bot) -> None:
+    """Configure forum topic IDs. Usage: /setthreads orders:633 support:629"""
+    if not is_group_chat(message.chat.type) or message.from_user is None:
+        return
+    if not await is_chat_admin(bot, message.chat.id, message.from_user.id):
+        return
+
+    args = (message.text or "").split()[1:]
+    orders_tid: int | None = None
+    support_tid: int | None = None
+    for arg in args:
+        if arg.startswith("orders:"):
+            try:
+                orders_tid = int(arg.split(":")[1])
+            except ValueError:
+                pass
+        elif arg.startswith("support:"):
+            try:
+                support_tid = int(arg.split(":")[1])
+            except ValueError:
+                pass
+
+    if orders_tid is None and support_tid is None:
+        await message.answer(
+            "Використання: /setthreads orders:<thread_id> support:<thread_id>\n"
+            "Наприклад: /setthreads orders:633 support:629"
+        )
+        return
+
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            from app.services.admin_config import get_active_admin_binding
+            binding = await get_active_admin_binding(session)
+            if binding is None or binding.chat_id != message.chat.id:
+                await message.answer("Спочатку прив'яжіть цей чат командою /bind")
+                return
+            if orders_tid is not None:
+                binding.orders_thread_id = orders_tid
+            if support_tid is not None:
+                binding.support_thread_id = support_tid
+
+    parts = []
+    if orders_tid:
+        parts.append(f"замовлення → тема #{orders_tid}")
+    if support_tid:
+        parts.append(f"підтримка → тема #{support_tid}")
+    await message.answer(f"✅ Теми налаштовано: {', '.join(parts)}")
+
+
 # ── Admin panel ──────────────────────────────────────────────────────────────
 
 @router.message(Command("admin"))

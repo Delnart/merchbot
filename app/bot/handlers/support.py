@@ -56,7 +56,10 @@ async def process_feedback(message: Message, state: FSMContext) -> None:
         f"{message.text or message.caption or '(без тексту)'}"
     )
 
-    meta_msg = await message.bot.send_message(admin_binding.chat_id, text)
+    thread_id = admin_binding.support_thread_id
+    send_kwargs = {"message_thread_id": thread_id} if thread_id else {}
+
+    meta_msg = await message.bot.send_message(admin_binding.chat_id, text, **send_kwargs)
     support_reply_targets[meta_msg.message_id] = user.id
     try:
         copied = await message.bot.copy_message(
@@ -136,7 +139,10 @@ async def user_reply_to_admin(message: Message) -> None:
         f"{message.text or message.caption or '(без тексту)'}"
     )
 
-    meta_msg = await message.bot.send_message(admin_binding.chat_id, text)
+    meta_msg = await message.bot.send_message(
+        admin_binding.chat_id, text,
+        **( {"message_thread_id": admin_binding.support_thread_id} if admin_binding.support_thread_id else {} )
+    )
     support_reply_targets[meta_msg.message_id] = user.id
     try:
         copied = await message.bot.copy_message(
