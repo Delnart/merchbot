@@ -673,7 +673,8 @@ async def api_select_pickup_slot(order_id: int, body: OrderPickupSelect, telegra
                 elif body.pickup_slot_id:
                     user_msg = (
                         f"✅ Час видачі для замовлення #{order.id} підтверджено!\n\n"
-                        f"📦 {slot_info}\n\n"
+                        f"📦 {slot_info}\n"
+                        f"📍 Видача відбувається в 232 кабінеті.\n\n"
                         f"Не забудьте прийти в корпус у вказаний час 🙂"
                     )
                 else:
